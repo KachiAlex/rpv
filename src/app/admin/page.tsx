@@ -2,18 +2,18 @@
 import { useState } from 'react';
 import { useBibleStore } from '@/lib/store';
 
-// Dynamic import for PDF parser (client-side only)
-async function parsePDF(file: File, translationId: string, translationName: string, bookName: string) {
-  const { parsePDF: parse } = await import('@/lib/pdf-parser');
+// Dynamic import for document parser (client-side only)
+async function parseDocument(file: File, translationId: string, translationName: string, bookName: string) {
+  const { parseDocument: parse } = await import('@/lib/pdf-parser');
   return parse(file, translationId, translationName, bookName);
 }
 
-// Force dynamic rendering to avoid server-side PDF parsing
+// Force dynamic rendering to avoid server-side document parsing
 export const dynamic = 'force-dynamic';
 
 export default function AdminPage() {
   const { importJson, addOrUpdateVerse } = useBibleStore();
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [parseProgress, setParseProgress] = useState('');
 
@@ -25,27 +25,28 @@ export default function AdminPage() {
   const [text, setText] = useState('');
 
   const onUpload = async () => {
-    if (!pdfFile) {
-      alert('Please select a PDF file');
+    if (!documentFile) {
+      alert('Please select a PDF or DOCX file');
       return;
     }
 
+    const fileType = documentFile.name.toLowerCase().endsWith('.docx') ? 'DOCX' : 'PDF';
     setIsParsing(true);
-    setParseProgress('Extracting text from PDF...');
+    setParseProgress(`Extracting text from ${fileType}...`);
     
     try {
       setParseProgress('Parsing chapters and verses...');
-      const translation = await parsePDF(pdfFile, translationId, translationName, book);
+      const translation = await parseDocument(documentFile, translationId, translationName, book);
       
       setParseProgress('Importing translation...');
       importJson({ translations: [translation] });
       
       setParseProgress('Complete!');
       alert(`Upload complete! Found ${translation.books[0]?.chapters.length || 0} chapters.`);
-      setPdfFile(null);
+      setDocumentFile(null);
     } catch (error) {
-      console.error('PDF parsing error:', error);
-      alert(`Error parsing PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Document parsing error:', error);
+      alert(`Error parsing document: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsParsing(false);
       setParseProgress('');
@@ -55,8 +56,8 @@ export default function AdminPage() {
   return (
     <div className="grid gap-8 lg:grid-cols-2">
       <section className="rounded-xl border bg-white p-6">
-        <h2 className="text-lg font-semibold">Upload PDF Translation</h2>
-        <p className="text-sm text-neutral-600 mt-1">Upload a PDF file containing Bible text. The system will automatically identify chapters and verses.</p>
+        <h2 className="text-lg font-semibold">Upload Document Translation</h2>
+        <p className="text-sm text-neutral-600 mt-1">Upload a PDF or DOCX file containing Bible text. The system will automatically identify chapters and verses.</p>
         
         <div className="mt-4 space-y-3">
           <div>
@@ -87,16 +88,16 @@ export default function AdminPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">PDF File</label>
+            <label className="block text-sm font-medium mb-1">Document File (PDF or DOCX)</label>
             <input 
               type="file" 
-              accept="application/pdf" 
-              onChange={(e) => setPdfFile(e.target.files?.[0] ?? null)} 
+              accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" 
+              onChange={(e) => setDocumentFile(e.target.files?.[0] ?? null)} 
               className="w-full rounded-md border p-2"
               disabled={isParsing}
             />
-            {pdfFile && (
-              <p className="mt-1 text-xs text-neutral-600">Selected: {pdfFile.name}</p>
+            {documentFile && (
+              <p className="mt-1 text-xs text-neutral-600">Selected: {documentFile.name}</p>
             )}
           </div>
           
@@ -107,9 +108,9 @@ export default function AdminPage() {
           <button 
             className="w-full rounded-md bg-brand-600 px-4 py-2 text-white hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed" 
             onClick={onUpload}
-            disabled={isParsing || !pdfFile}
+            disabled={isParsing || !documentFile}
           >
-            {isParsing ? 'Parsing PDF...' : 'Upload & Parse PDF'}
+            {isParsing ? 'Parsing Document...' : 'Upload & Parse Document'}
           </button>
         </div>
         
@@ -118,7 +119,7 @@ export default function AdminPage() {
           <ul className="list-disc list-inside space-y-1">
             <li>Ensure chapters are clearly marked (e.g., "Chapter 1", "1", etc.)</li>
             <li>Verses should start with verse numbers (e.g., "1 Text here" or "1: Text here")</li>
-            <li>Use a single book per PDF file</li>
+            <li>Use a single book per file (PDF or DOCX)</li>
           </ul>
         </div>
       </section>

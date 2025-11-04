@@ -1,1 +1,1 @@
-self.__REACT_LOADABLE_MANIFEST='{"app\\\\admin\\\\page.tsx -> @/lib/pdf-parser":{"id":9448,"files":["static/chunks/9b0008ae.3a9d211fe562cb1e.js","static/chunks/448.c93dd21c54a3688a.js"]}}';
+self.__REACT_LOADABLE_MANIFEST='{"app\\\\admin\\\\page.tsx -> @/lib/pdf-parser":{"id":9448,"files":["static/chunks/9b0008ae.3a9d211fe562cb1e.js","static/chunks/904.7dbfbfec559ae48f.js","static/chunks/448.41c1cfada4bc2f59.js"]}}';

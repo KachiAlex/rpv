@@ -1,4 +1,5 @@
 import * as pdfjsLib from 'pdfjs-dist';
+import mammoth from 'mammoth';
 import type { Translation, Book, Chapter, Verse } from './store';
 
 // Configure PDF.js worker
@@ -7,20 +8,36 @@ if (typeof window !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 }
 
-export async function parsePDF(file: File, translationId: string, translationName: string, bookName: string): Promise<Translation> {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+export async function parseDocument(file: File, translationId: string, translationName: string, bookName: string): Promise<Translation> {
+  const fileType = file.type;
+  const fileName = file.name.toLowerCase();
   
   let fullText = '';
   
-  // Extract text from all pages
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .map((item: any) => item.str)
-      .join(' ');
-    fullText += pageText + '\n';
+  if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) {
+    // Parse PDF
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    
+    // Extract text from all pages
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(' ');
+      fullText += pageText + '\n';
+    }
+  } else if (
+    fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    fileName.endsWith('.docx')
+  ) {
+    // Parse DOCX
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    fullText = result.value;
+  } else {
+    throw new Error(`Unsupported file type: ${fileType}. Please upload a PDF or DOCX file.`);
   }
   
   // Parse chapters and verses
@@ -34,6 +51,11 @@ export async function parsePDF(file: File, translationId: string, translationNam
       chapters
     }]
   };
+}
+
+// Keep old function name for backward compatibility
+export async function parsePDF(file: File, translationId: string, translationName: string, bookName: string): Promise<Translation> {
+  return parseDocument(file, translationId, translationName, bookName);
 }
 
 function parseBibleText(text: string, bookName: string): Chapter[] {
