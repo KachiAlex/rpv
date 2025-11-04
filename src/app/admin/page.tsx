@@ -147,7 +147,20 @@ export default function AdminPage() {
         <label className="block text-sm font-medium mt-3">Text</label>
         <textarea className="w-full rounded-md border p-2 min-h-[120px]" value={text} onChange={(e) => setText(e.target.value)} />
         <div className="mt-3 flex gap-2">
-          <button className="rounded-md bg-brand-600 px-4 py-2 text-white" onClick={() => addOrUpdateVerse({ translationId, book, chapter, verse, text })}>Save Verse</button>
+          <button 
+            className="rounded-md bg-brand-600 px-4 py-2 text-white hover:bg-brand-700" 
+            onClick={() => {
+              if (!text.trim()) {
+                alert('Please enter verse text');
+                return;
+              }
+              addOrUpdateVerse({ translationId, book, chapter, verse, text });
+              alert(`Verse ${book} ${chapter}:${verse} saved successfully!`);
+              setText(''); // Clear text field after saving
+            }}
+          >
+            Save Verse
+          </button>
         </div>
       </section>
     </div>

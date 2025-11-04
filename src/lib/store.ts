@@ -109,25 +109,61 @@ export const useBibleStore = create<BibleState>((set, get) => ({
   },
   addOrUpdateVerse: ({ translationId, book, chapter, verse, text }) => {
     const state = get();
-    const translations = [...state.translations];
-    let t = translations.find((x) => x.id === translationId);
-    if (!t) {
-      t = { id: translationId, name: translationId, books: [] };
-      translations.push(t);
+    const translations = state.translations.map(t => {
+      if (t.id !== translationId) return t;
+      
+      const books = t.books.map(b => {
+        if (b.name !== book) return b;
+        
+        const chapters = b.chapters.map(c => {
+          if (c.number !== chapter) return c;
+          
+          const verses = [...c.verses];
+          const verseIndex = verses.findIndex(v => v.number === verse);
+          if (verseIndex >= 0) {
+            verses[verseIndex] = { number: verse, text };
+          } else {
+            verses.push({ number: verse, text });
+          }
+          
+          return { ...c, verses };
+        });
+        
+        const chapterIndex = chapters.findIndex(c => c.number === chapter);
+        if (chapterIndex < 0) {
+          chapters.push({ number: chapter, verses: [{ number: verse, text }] });
+        }
+        
+        return { ...b, chapters };
+      });
+      
+      const bookIndex = books.findIndex(b => b.name === book);
+      if (bookIndex < 0) {
+        books.push({ 
+          name: book, 
+          chapters: [{ number: chapter, verses: [{ number: verse, text }] }] 
+        });
+      }
+      
+      return { ...t, books };
+    });
+    
+    const translationIndex = translations.findIndex(t => t.id === translationId);
+    if (translationIndex < 0) {
+      translations.push({
+        id: translationId,
+        name: translationId,
+        books: [{ 
+          name: book, 
+          chapters: [{ number: chapter, verses: [{ number: verse, text }] }] 
+        }]
+      });
     }
-    let b = t.books.find((x) => x.name === book);
-    if (!b) {
-      b = { name: book, chapters: [] };
-      t.books.push(b);
-    }
-    let c = b.chapters.find((x) => x.number === chapter);
-    if (!c) {
-      c = { number: chapter, verses: [] };
-      b.chapters.push(c);
-    }
-    const v = c.verses.find((x) => x.number === verse);
-    if (v) v.text = text; else c.verses.push({ number: verse, text });
-    set({ translations, current: state.current ?? translations[0] ?? null });
+    
+    set({ 
+      translations, 
+      current: state.current ?? translations.find(t => t.id === translationId) ?? translations[0] ?? null 
+    });
   }
 }));
 
