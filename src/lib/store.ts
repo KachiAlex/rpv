@@ -122,9 +122,7 @@ export const useBibleStore = create<BibleState>((set, get) => ({
     }
     let c = b.chapters.find((x) => x.number === chapter);
     if (!c) {
-      c = { number, verses: [] } as Chapter;
-      // ensure number is set correctly
-      c.number = chapter;
+      c = { number: chapter, verses: [] };
       b.chapters.push(c);
     }
     const v = c.verses.find((x) => x.number === verse);
