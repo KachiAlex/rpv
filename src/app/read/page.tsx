@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from 'react';
 import { useBibleStore } from '@/lib/store';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function ReadPage() {
   const { translations, current, loadSample, setReference } = useBibleStore();
@@ -38,6 +39,33 @@ export default function ReadPage() {
     
     return c.verses.slice(startIndex, endIndex);
   }, [books, book, chapter, verse]);
+
+  // Calculate previous and next chapter numbers
+  const { previousChapter, nextChapter } = useMemo(() => {
+    const sortedChapters = [...chapters].sort((a, b) => a - b);
+    const currentIndex = sortedChapters.indexOf(chapter);
+    
+    return {
+      previousChapter: currentIndex > 0 ? sortedChapters[currentIndex - 1] : null,
+      nextChapter: currentIndex < sortedChapters.length - 1 ? sortedChapters[currentIndex + 1] : null,
+    };
+  }, [chapters, chapter]);
+
+  // Navigate to previous chapter
+  const goToPreviousChapter = () => {
+    if (previousChapter !== null) {
+      setChapter(previousChapter);
+      setVerse(1); // Reset to first verse
+    }
+  };
+
+  // Navigate to next chapter
+  const goToNextChapter = () => {
+    if (nextChapter !== null) {
+      setChapter(nextChapter);
+      setVerse(1); // Reset to first verse
+    }
+  };
 
   useEffect(() => {
     if (book && chapter && verse) setReference({ book, chapter, verse });
@@ -92,7 +120,41 @@ export default function ReadPage() {
       </aside>
 
       <section className="rounded-xl border bg-white p-6">
-        <div className="text-sm text-neutral-500 mb-4">{current?.name} • {book || '—'} {chapter}</div>
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-sm text-neutral-500">{current?.name} • {book || '—'} {chapter}</div>
+          
+          {book && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={goToPreviousChapter}
+                disabled={previousChapter === null}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  previousChapter === null
+                    ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                    : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                }`}
+                title={previousChapter ? `Go to Chapter ${previousChapter}` : 'No previous chapter'}
+              >
+                <ChevronLeft size={16} />
+                <span>Previous</span>
+              </button>
+              
+              <button
+                onClick={goToNextChapter}
+                disabled={nextChapter === null}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  nextChapter === null
+                    ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                    : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                }`}
+                title={nextChapter ? `Go to Chapter ${nextChapter}` : 'No next chapter'}
+              >
+                <span>Next</span>
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
+        </div>
         
         {displayedVerses.length === 0 ? (
           <div className="text-neutral-500 text-center py-12">Choose a book, chapter, and verse.</div>
