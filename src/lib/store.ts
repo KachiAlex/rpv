@@ -27,6 +27,7 @@ type BibleState = {
   sendToProjector: (ref: Reference) => void;
   subscribeToChannel: () => void;
   importJson: (data: { translations: Translation[] }) => void;
+  mergeTranslation: (translation: Translation) => void;
   addOrUpdateVerse: (args: { translationId: string; book: string; chapter: number; verse: number; text: string }) => void;
 };
 
@@ -106,6 +107,74 @@ export const useBibleStore = create<BibleState>((set, get) => ({
   importJson: (data) => {
     const list = data.translations ?? [];
     set({ translations: list, current: list[0] ?? null });
+  },
+  mergeTranslation: (newTranslation) => {
+    const state = get();
+    const existingIndex = state.translations.findIndex(t => t.id === newTranslation.id);
+    
+    if (existingIndex >= 0) {
+      // Merge with existing translation
+      const existingTranslation = state.translations[existingIndex];
+      const existingBook = existingTranslation.books.find(b => b.name === newTranslation.books[0]?.name);
+      
+      let updatedBooks: Book[];
+      if (existingBook) {
+        // Merge chapters into existing book
+        const newBook = newTranslation.books[0];
+        const updatedChapters = [...existingBook.chapters];
+        
+        newBook.chapters.forEach(newChapter => {
+          const chapterIndex = updatedChapters.findIndex(c => c.number === newChapter.number);
+          if (chapterIndex >= 0) {
+            // Merge verses into existing chapter
+            const existingChapter = updatedChapters[chapterIndex];
+            const updatedVerses = [...existingChapter.verses];
+            
+            newChapter.verses.forEach(newVerse => {
+              const verseIndex = updatedVerses.findIndex(v => v.number === newVerse.number);
+              if (verseIndex >= 0) {
+                updatedVerses[verseIndex] = newVerse; // Update existing
+              } else {
+                updatedVerses.push(newVerse); // Add new
+              }
+            });
+            
+            updatedVerses.sort((a, b) => a.number - b.number);
+            updatedChapters[chapterIndex] = { ...existingChapter, verses: updatedVerses };
+          } else {
+            updatedChapters.push(newChapter); // Add new chapter
+          }
+        });
+        
+        updatedChapters.sort((a, b) => a.number - b.number);
+        updatedBooks = existingTranslation.books.map(b => 
+          b.name === existingBook.name ? { ...b, chapters: updatedChapters } : b
+        );
+      } else {
+        // Add new book
+        updatedBooks = [...existingTranslation.books, newTranslation.books[0]];
+      }
+      
+      const updatedTranslation: Translation = {
+        ...existingTranslation,
+        name: newTranslation.name || existingTranslation.name,
+        books: updatedBooks
+      };
+      
+      const updatedTranslations = [...state.translations];
+      updatedTranslations[existingIndex] = updatedTranslation;
+      
+      set({ 
+        translations: updatedTranslations,
+        current: state.current?.id === newTranslation.id ? updatedTranslation : state.current
+      });
+    } else {
+      // Add new translation
+      set({ 
+        translations: [...state.translations, newTranslation],
+        current: state.current ?? newTranslation
+      });
+    }
   },
   addOrUpdateVerse: ({ translationId, book, chapter, verse, text }) => {
     const state = get();

@@ -12,7 +12,7 @@ async function parseDocument(file: File, translationId: string, translationName:
 export const dynamic = 'force-dynamic';
 
 export default function AdminPage() {
-  const { importJson, addOrUpdateVerse } = useBibleStore();
+  const { importJson, mergeTranslation, addOrUpdateVerse } = useBibleStore();
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [parseProgress, setParseProgress] = useState('');
@@ -39,10 +39,14 @@ export default function AdminPage() {
       const translation = await parseDocument(documentFile, translationId, translationName, book);
       
       setParseProgress('Importing translation...');
-      importJson({ translations: [translation] });
+      const chaptersCount = translation.books[0]?.chapters.length || 0;
+      const versesCount = translation.books[0]?.chapters.reduce((sum, ch) => sum + ch.verses.length, 0) || 0;
+      
+      // Merge with existing translation (updates existing, adds new)
+      mergeTranslation(translation);
       
       setParseProgress('Complete!');
-      alert(`Upload complete! Found ${translation.books[0]?.chapters.length || 0} chapters.`);
+      alert(`Document uploaded and parsed.\n\nFound ${chaptersCount} chapter(s) with ${versesCount} verse(s).`);
       setDocumentFile(null);
     } catch (error) {
       console.error('Document parsing error:', error);
