@@ -2,12 +2,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useBibleStore } from '@/lib/store';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { BookmarkButton } from '@/components/bookmark/bookmark-button';
+import { useAuth } from '@/lib/hooks/use-auth';
+import { UserService } from '@/lib/services/user-service';
+import { SearchBar } from '@/components/search/search-bar';
 
 export default function ReadPage() {
   const { translations, current, loadSample, loadTranslations, setReference } = useBibleStore();
+  const { user, isAuthenticated } = useAuth();
   const [book, setBook] = useState<string>('');
   const [chapter, setChapter] = useState<number>(1);
   const [verse, setVerse] = useState<number>(1);
+  const userService = new UserService();
 
   useEffect(() => {
     // Try to load from Firestore, fallback to sample
@@ -15,6 +21,28 @@ export default function ReadPage() {
       loadSample();
     });
   }, []);
+
+  // Track reading history
+  useEffect(() => {
+    if (isAuthenticated && user && current && book && chapter && verse) {
+      trackReadingHistory();
+    }
+  }, [isAuthenticated, user, current?.id, book, chapter, verse]);
+
+  const trackReadingHistory = async () => {
+    if (!user || !current) return;
+    
+    try {
+      await userService.addReadingHistory(user.uid, {
+        translationId: current.id,
+        book,
+        chapter,
+        verse,
+      });
+    } catch (error) {
+      console.error('Error tracking reading history:', error);
+    }
+  };
 
   const books = useMemo(() => current?.books ?? [], [current]);
   const chapters = useMemo(() => {
@@ -86,6 +114,11 @@ export default function ReadPage() {
     <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
       <aside className="rounded-xl border bg-white p-4 h-fit sticky top-4">
         <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium mb-2">Search</label>
+            <SearchBar />
+          </div>
+          
           <label className="block text-sm font-medium">Translation</label>
           <select className="w-full rounded-md border p-2" value={current?.id ?? ''} onChange={(e) => useBibleStore.getState().setCurrent(e.target.value)}>
             {translations.map((t) => (
@@ -173,8 +206,18 @@ export default function ReadPage() {
                     : 'bg-neutral-50 border border-neutral-200'
                 }`}
               >
-                <div className="text-sm font-semibold text-brand-700 mb-2">
-                  {book} {chapter}:{v.number}
+                <div className="flex items-start justify-between mb-2">
+                  <div className="text-sm font-semibold text-brand-700">
+                    {book} {chapter}:{v.number}
+                  </div>
+                  {current && (
+                    <BookmarkButton
+                      translationId={current.id}
+                      book={book}
+                      chapter={chapter}
+                      verse={v.number}
+                    />
+                  )}
                 </div>
                 <div className="text-lg leading-relaxed text-neutral-900">
                   {v.text}

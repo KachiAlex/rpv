@@ -8,8 +8,18 @@ export default function HomePage() {
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight">A unique way to read and project the Bible</h1>
           <p className="text-neutral-700">Built for readers, preachers, and congregations. Upload translations, browse beautifully, and project verses live as they are mentioned.</p>
           <div className="flex gap-3">
-            <Link href="/read" className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-4 py-2">Start Reading</Link>
-            <Link href="/projector" className="rounded-md border px-4 py-2">Open Projector</Link>
+            <Link 
+              href="/read" 
+              className="inline-flex items-center justify-center rounded-md bg-brand-600 hover:bg-brand-700 text-white px-6 py-3 font-medium transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+            >
+              Start Reading
+            </Link>
+            <Link 
+              href="/projector" 
+              className="inline-flex items-center justify-center rounded-md border border-neutral-300 hover:border-neutral-400 hover:bg-neutral-50 px-6 py-3 font-medium transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-neutral-400 focus:ring-offset-2"
+            >
+              Open Projector
+            </Link>
           </div>
         </div>
         <div className="rounded-xl border p-6 bg-white shadow-sm">

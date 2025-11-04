@@ -1,6 +1,7 @@
 "use client";
 import { useState } from 'react';
 import { useBibleStore } from '@/lib/store';
+import { ProtectedRoute } from '@/components/auth/protected-route';
 
 // Dynamic import for document parser (client-side only)
 async function parseDocument(file: File, translationId: string, translationName: string, bookName: string) {
@@ -11,7 +12,7 @@ async function parseDocument(file: File, translationId: string, translationName:
 // Force dynamic rendering to avoid server-side document parsing
 export const dynamic = 'force-dynamic';
 
-export default function AdminPage() {
+function AdminPageContent() {
   const { importJson, mergeTranslation, addOrUpdateVerse } = useBibleStore();
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [isParsing, setIsParsing] = useState(false);
@@ -168,5 +169,13 @@ export default function AdminPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+export default function AdminPage() {
+  return (
+    <ProtectedRoute requireAdmin={true}>
+      <AdminPageContent />
+    </ProtectedRoute>
   );
 }
