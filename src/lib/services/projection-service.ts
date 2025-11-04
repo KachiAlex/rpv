@@ -1,12 +1,12 @@
-import { FirestoreRepository } from '../repositories/firestore-repository';
+import { CacheManager } from '../cache/cache-manager';
 import type { ProjectorRef, Reference } from '../types';
 import { useBibleStore } from '../store';
 
 export class ProjectionService {
-  private repository: FirestoreRepository;
+  private cacheManager: CacheManager;
 
   constructor() {
-    this.repository = new FirestoreRepository();
+    this.cacheManager = new CacheManager();
   }
 
   async sendToProjector(channelId: string, ref: Reference): Promise<void> {
@@ -27,7 +27,7 @@ export class ProjectionService {
         timestamp: new Date(),
       };
 
-      await this.repository.saveProjectionChannel(channelId, projectorRef);
+      await this.cacheManager.saveProjectionChannel(channelId, projectorRef);
     } catch (error) {
       console.error('Error sending to projector:', error);
       throw error;
@@ -35,12 +35,24 @@ export class ProjectionService {
   }
 
   subscribeToChannel(channelId: string, callback: (ref: ProjectorRef | null) => void): () => void {
-    return this.repository.subscribeToProjectionChannel(channelId, callback);
+    // Use Firestore for real-time subscriptions
+    const { FirestoreRepository } = require('../repositories/firestore-repository');
+    const repository = new FirestoreRepository();
+    
+    // Also cache locally when updates come in
+    const wrappedCallback = (ref: ProjectorRef | null) => {
+      if (ref) {
+        this.cacheManager.saveProjectionChannel(channelId, ref).catch(() => {});
+      }
+      callback(ref);
+    };
+    
+    return repository.subscribeToProjectionChannel(channelId, wrappedCallback);
   }
 
   async getChannel(channelId: string): Promise<ProjectorRef | null> {
     try {
-      return await this.repository.getProjectionChannel(channelId);
+      return await this.cacheManager.getProjectionChannel(channelId);
     } catch (error) {
       console.error('Error getting channel:', error);
       throw error;

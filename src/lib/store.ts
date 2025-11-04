@@ -60,39 +60,39 @@ export const useBibleStore = create<BibleState>((set, get) => {
     loadTranslations: async () => {
       set({ isLoading: true, error: null });
       try {
-        const { db } = await import('./firebase').then(m => m.getFirebase());
+        // Load from cache (IndexedDB) or Firestore
+        const translations = await translationService.getAllTranslations();
         
-        if (!db) {
-          // No Firebase, use sample data
+        if (translations.length === 0) {
+          // No translations, use sample
           get().loadSample();
           set({ isLoading: false });
           return;
         }
 
-        // Load from Firestore
-        const translations = await translationService.getAllTranslations();
-        
-        if (translations.length === 0) {
-          // No translations in Firestore, use sample
-          get().loadSample();
-        } else {
-          set({ 
-            translations, 
-            current: translations[0] ?? null,
-            isLoading: false 
-          });
-        }
-
-        // Subscribe to real-time updates
-        const unsubscribe = translationService.subscribeToAllTranslations((translations) => {
-          set({ translations, current: get().current ?? translations[0] ?? null });
+        set({ 
+          translations, 
+          current: translations[0] ?? null,
+          isLoading: false 
         });
-        
-        const unsubscribers = get()._unsubscribers;
-        if (unsubscribers.translations) {
-          unsubscribers.translations();
+
+        // Subscribe to real-time updates from Firestore
+        try {
+          const { db } = await import('./firebase').then(m => m.getFirebase());
+          if (db) {
+            const unsubscribe = translationService.subscribeToAllTranslations((translations) => {
+              set({ translations, current: get().current ?? translations[0] ?? null });
+            });
+            
+            const unsubscribers = get()._unsubscribers;
+            if (unsubscribers.translations) {
+              unsubscribers.translations();
+            }
+            unsubscribers.translations = unsubscribe;
+          }
+        } catch (error) {
+          console.warn('Firestore subscription failed, using cached data:', error);
         }
-        unsubscribers.translations = unsubscribe;
       } catch (error) {
         console.error('Error loading translations:', error);
         set({ 

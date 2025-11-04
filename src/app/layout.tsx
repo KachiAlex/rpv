@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Navbar } from '@/components/navbar';
 import { Footer } from '@/components/footer';
+import { NetworkStatusIndicator } from '@/components/network-status';
 
 export const metadata: Metadata = {
   title: 'RPV Bible',
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Navbar />
         <main className="container-max py-8">{children}</main>
         <Footer />
+        <NetworkStatusIndicator />
       </body>
     </html>
   );

@@ -1,16 +1,16 @@
-import { FirestoreRepository } from '../repositories/firestore-repository';
+import { CacheManager } from '../cache/cache-manager';
 import type { Translation, Book, Chapter, Verse } from '../types';
 
 export class TranslationService {
-  private repository: FirestoreRepository;
+  private cacheManager: CacheManager;
 
   constructor() {
-    this.repository = new FirestoreRepository();
+    this.cacheManager = new CacheManager();
   }
 
   async getTranslation(id: string): Promise<Translation | null> {
     try {
-      return await this.repository.getTranslation(id);
+      return await this.cacheManager.getTranslation(id);
     } catch (error) {
       console.error('Error getting translation:', error);
       throw error;
@@ -19,7 +19,7 @@ export class TranslationService {
 
   async getAllTranslations(): Promise<Translation[]> {
     try {
-      return await this.repository.getAllTranslations();
+      return await this.cacheManager.getAllTranslations();
     } catch (error) {
       console.error('Error getting all translations:', error);
       throw error;
@@ -34,7 +34,7 @@ export class TranslationService {
         createdAt: translation.createdAt || now,
         updatedAt: now,
       };
-      await this.repository.saveTranslation(translationWithTimestamps);
+      await this.cacheManager.saveTranslation(translationWithTimestamps);
     } catch (error) {
       console.error('Error saving translation:', error);
       throw error;
@@ -43,18 +43,7 @@ export class TranslationService {
 
   async mergeTranslation(newTranslation: Translation): Promise<Translation> {
     try {
-      const existing = await this.getTranslation(newTranslation.id);
-      
-      if (!existing) {
-        // New translation
-        await this.saveTranslation(newTranslation);
-        return newTranslation;
-      }
-
-      // Merge translations
-      const merged = this.mergeTranslations(existing, newTranslation);
-      await this.saveTranslation(merged);
-      return merged;
+      return await this.cacheManager.mergeTranslation(newTranslation);
     } catch (error) {
       console.error('Error merging translation:', error);
       throw error;
@@ -97,55 +86,6 @@ export class TranslationService {
     }
   }
 
-  private mergeTranslations(existing: Translation, newTranslation: Translation): Translation {
-    const existingBook = existing.books.find(b => b.name === newTranslation.books[0]?.name);
-    
-    let updatedBooks: Book[];
-    
-    if (existingBook) {
-      // Merge chapters into existing book
-      const newBook = newTranslation.books[0];
-      const updatedChapters = [...existingBook.chapters];
-      
-      newBook.chapters.forEach(newChapter => {
-        const chapterIndex = updatedChapters.findIndex(c => c.number === newChapter.number);
-        if (chapterIndex >= 0) {
-          // Merge verses into existing chapter
-          const existingChapter = updatedChapters[chapterIndex];
-          const updatedVerses = [...existingChapter.verses];
-          
-          newChapter.verses.forEach(newVerse => {
-            const verseIndex = updatedVerses.findIndex(v => v.number === newVerse.number);
-            if (verseIndex >= 0) {
-              updatedVerses[verseIndex] = newVerse; // Update existing
-            } else {
-              updatedVerses.push(newVerse); // Add new
-            }
-          });
-          
-          updatedVerses.sort((a, b) => a.number - b.number);
-          updatedChapters[chapterIndex] = { ...existingChapter, verses: updatedVerses };
-        } else {
-          updatedChapters.push(newChapter); // Add new chapter
-        }
-      });
-      
-      updatedChapters.sort((a, b) => a.number - b.number);
-      updatedBooks = existing.books.map(b => 
-        b.name === existingBook.name ? { ...b, chapters: updatedChapters } : b
-      );
-    } else {
-      // Add new book
-      updatedBooks = [...existing.books, newTranslation.books[0]];
-    }
-    
-    return {
-      ...existing,
-      name: newTranslation.name || existing.name,
-      books: updatedBooks,
-      updatedAt: new Date(),
-    };
-  }
 
   private addVerseToTranslation(
     translation: Translation,
@@ -191,11 +131,16 @@ export class TranslationService {
   }
 
   subscribeToTranslation(id: string, callback: (translation: Translation | null) => void): () => void {
-    return this.repository.subscribeToTranslation(id, callback);
+    // Import FirestoreRepository dynamically to avoid issues
+    const { FirestoreRepository } = require('../repositories/firestore-repository');
+    const repository = new FirestoreRepository();
+    return repository.subscribeToTranslation(id, callback);
   }
 
   subscribeToAllTranslations(callback: (translations: Translation[]) => void): () => void {
-    return this.repository.subscribeToAllTranslations(callback);
+    const { FirestoreRepository } = require('../repositories/firestore-repository');
+    const repository = new FirestoreRepository();
+    return repository.subscribeToAllTranslations(callback);
   }
 }
 
