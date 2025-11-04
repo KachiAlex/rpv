@@ -43,7 +43,7 @@ export default function AdminPage() {
       const versesCount = translation.books[0]?.chapters.reduce((sum, ch) => sum + ch.verses.length, 0) || 0;
       
       // Merge with existing translation (updates existing, adds new)
-      mergeTranslation(translation);
+      await mergeTranslation(translation);
       
       setParseProgress('Complete!');
       alert(`Document uploaded and parsed.\n\nFound ${chaptersCount} chapter(s) with ${versesCount} verse(s).`);

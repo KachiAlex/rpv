@@ -1,6 +1,6 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
-import type { Translation, Book, Chapter, Verse } from './store';
+import type { Translation, Book, Chapter, Verse } from './types';
 
 // Configure PDF.js worker
 if (typeof window !== 'undefined') {

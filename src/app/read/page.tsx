@@ -4,14 +4,17 @@ import { useBibleStore } from '@/lib/store';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function ReadPage() {
-  const { translations, current, loadSample, setReference } = useBibleStore();
+  const { translations, current, loadSample, loadTranslations, setReference } = useBibleStore();
   const [book, setBook] = useState<string>('');
   const [chapter, setChapter] = useState<number>(1);
   const [verse, setVerse] = useState<number>(1);
 
   useEffect(() => {
-    loadSample();
-  }, [loadSample]);
+    // Try to load from Firestore, fallback to sample
+    loadTranslations().catch(() => {
+      loadSample();
+    });
+  }, []);
 
   const books = useMemo(() => current?.books ?? [], [current]);
   const chapters = useMemo(() => {

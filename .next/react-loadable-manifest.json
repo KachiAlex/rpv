@@ -6,5 +6,9 @@
       "static/chunks/904.7dbfbfec559ae48f.js",
       "static/chunks/448.8078d519363b23ad.js"
     ]
+  },
+  "lib\\store.ts -> ./firebase": {
+    "id": 1827,
+    "files": []
   }
 }

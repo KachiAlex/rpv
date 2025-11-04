@@ -3,16 +3,18 @@ import { useEffect, useState } from 'react';
 import { useBibleStore } from '@/lib/store';
 
 export default function RemotePage() {
-  const { translations, current, loadSample, setCurrent, sendToProjector, setChannelId } = useBibleStore();
+  const { translations, current, loadSample, loadTranslations, setCurrent, sendToProjector, setChannelId } = useBibleStore();
   const [book, setBook] = useState('John');
   const [chapter, setChapter] = useState(3);
   const [verse, setVerse] = useState(16);
   const [channel, setChannel] = useState('default');
 
   useEffect(() => {
-    loadSample();
+    loadTranslations().catch(() => {
+      loadSample();
+    });
     setChannelId(channel);
-  }, [loadSample, channel, setChannelId]);
+  }, [channel]);
 
   return (
     <div className="max-w-xl mx-auto">
@@ -37,7 +39,13 @@ export default function RemotePage() {
           <input type="number" className="rounded-md border p-2" value={verse} onChange={(e) => setVerse(Number(e.target.value))} />
         </div>
 
-        <button className="rounded-md bg-brand-600 px-4 py-2 text-white" onClick={() => sendToProjector({ book, chapter, verse })}>Send to Projector</button>
+        <button className="rounded-md bg-brand-600 px-4 py-2 text-white" onClick={async () => {
+          try {
+            await sendToProjector({ book, chapter, verse });
+          } catch (error) {
+            alert(`Error sending to projector: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
+        }}>Send to Projector</button>
       </div>
     </div>
   );
