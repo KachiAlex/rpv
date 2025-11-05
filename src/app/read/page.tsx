@@ -2,12 +2,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useBibleStore } from '@/lib/store';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { BookmarkButton } from '@/components/bookmark/bookmark-button';
+import { VerseCard } from '@/components/verse/verse-card';
+import { CopyVersesButton } from '@/components/verse/copy-verses-button';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { UserService } from '@/lib/services/user-service';
 import { SearchBar } from '@/components/search/search-bar';
 import { NoteEditor } from '@/components/notes/note-editor';
-import { FileText } from 'lucide-react';
 
 export default function ReadPage() {
   const { translations, current, loadSample, loadTranslations, setReference } = useBibleStore();
@@ -16,6 +16,7 @@ export default function ReadPage() {
   const [chapter, setChapter] = useState<number>(1);
   const [verse, setVerse] = useState<number>(1);
   const [showNotes, setShowNotes] = useState(false);
+  const [selectedVerses, setSelectedVerses] = useState<Set<number>>(new Set());
   const userService = new UserService();
 
   useEffect(() => {
@@ -191,50 +192,72 @@ export default function ReadPage() {
         {displayedVerses.length === 0 ? (
           <div className="text-neutral-500 text-center py-12">Choose a book, chapter, and verse.</div>
         ) : (
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-            {displayedVerses.map((v) => (
-              <div
-                key={v.number}
-                id={`verse-${v.number}`}
-                className={`p-4 rounded-lg transition-colors ${
-                  v.number === verse 
-                    ? 'bg-brand-50 dark:bg-brand-900/20 border-2 border-brand-300 dark:border-brand-600' 
-                    : 'bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
-                }`}
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div className="text-sm font-semibold text-brand-700 dark:text-brand-400">
-                    {book} {chapter}:{v.number}
-                  </div>
-                  {current && (
-                    <div className="flex items-center gap-2">
-                      <BookmarkButton
-                        translationId={current.id}
-                        book={book}
-                        chapter={chapter}
-                        verse={v.number}
-                      />
-                      {isAuthenticated && (
-                        <button
-                          onClick={() => {
-                            setVerse(v.number);
-                            setShowNotes(true);
-                          }}
-                          className="p-2 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors"
-                          title="Add note"
-                        >
-                          <FileText size={18} className="text-neutral-400" />
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className="text-lg leading-relaxed text-neutral-900 dark:text-neutral-100">
-                  {v.text}
+          <>
+            {selectedVerses.size > 0 && (
+              <div className="mb-4 p-3 bg-brand-50 dark:bg-brand-900/20 border border-brand-300 dark:border-brand-600 rounded-lg flex items-center justify-between">
+                <span className="text-sm text-brand-700 dark:text-brand-400">
+                  {selectedVerses.size} {selectedVerses.size === 1 ? 'verse' : 'verses'} selected
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSelectedVerses(new Set())}
+                    className="text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+                  >
+                    Clear
+                  </button>
+                  <CopyVersesButton
+                    verses={displayedVerses
+                      .filter(v => selectedVerses.has(v.number))
+                      .map(v => ({ verse: v, book, chapter }))}
+                    translationName={current?.name}
+                    onCopy={() => setSelectedVerses(new Set())}
+                  />
                 </div>
               </div>
-            ))}
-          </div>
+            )}
+            
+            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+              {displayedVerses.map((v) => (
+                <div
+                  key={v.number}
+                  onClick={(e) => {
+                    // Allow multi-select with Ctrl/Cmd key
+                    if (e.ctrlKey || e.metaKey) {
+                      e.preventDefault();
+                      const newSelected = new Set(selectedVerses);
+                      if (newSelected.has(v.number)) {
+                        newSelected.delete(v.number);
+                      } else {
+                        newSelected.add(v.number);
+                      }
+                      setSelectedVerses(newSelected);
+                    } else {
+                      // Single click to select verse
+                      setVerse(v.number);
+                      setSelectedVerses(new Set([v.number]));
+                    }
+                  }}
+                  className={`cursor-pointer ${
+                    selectedVerses.has(v.number) ? 'ring-2 ring-brand-500' : ''
+                  }`}
+                >
+                  <VerseCard
+                    verse={v}
+                    book={book}
+                    chapter={chapter}
+                    isSelected={v.number === verse}
+                    translationName={current?.name}
+                    translationId={current?.id}
+                    isAuthenticated={isAuthenticated}
+                    onNoteClick={() => {
+                      setVerse(v.number);
+                      setShowNotes(true);
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </section>
 

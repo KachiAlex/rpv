@@ -64,7 +64,37 @@ export const useBibleStore = create<BibleState>((set, get) => {
         const translations = await translationService.getAllTranslations();
         
         if (translations.length === 0) {
-          // No translations, use sample
+          // No translations: try to import built-in seeds (KJV/ASV), then fallback to sample
+          try {
+            const seeds: Array<{ url: string }> = [
+              { url: '/translations/kjv.json' },
+              { url: '/translations/asv.json' },
+            ];
+            const loaded: Translation[] = [];
+            for (const seed of seeds) {
+              try {
+                const res = await fetch(seed.url, { cache: 'no-store' });
+                if (res.ok) {
+                  const data = await res.json();
+                  const list = (data?.translations ?? []) as Translation[];
+                  if (Array.isArray(list) && list.length > 0) {
+                    // Save via service so they persist
+                    for (const t of list) {
+                      await translationService.saveTranslation(t);
+                      loaded.push(t);
+                    }
+                  }
+                }
+              } catch {}
+            }
+
+            if (loaded.length > 0) {
+              set({ translations: loaded, current: loaded[0], isLoading: false });
+              return;
+            }
+          } catch {}
+
+          // Fallback to sample
           get().loadSample();
           set({ isLoading: false });
           return;

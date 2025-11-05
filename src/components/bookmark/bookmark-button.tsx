@@ -71,9 +71,12 @@ export function BookmarkButton({ translationId, book, chapter, verse }: Bookmark
 
   return (
     <button
-      onClick={toggleBookmark}
+      onClick={(e) => {
+        e.stopPropagation();
+        toggleBookmark();
+      }}
       disabled={loading}
-      className="p-2 rounded-md hover:bg-neutral-100 transition-colors disabled:opacity-50"
+      className="p-2 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors disabled:opacity-50"
       title={isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
     >
       {isBookmarked ? (
