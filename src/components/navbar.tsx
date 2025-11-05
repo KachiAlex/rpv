@@ -4,19 +4,40 @@ import { usePathname } from 'next/navigation';
 import { BookOpenText, Monitor, Upload, LogIn, LogOut, User } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/lib/hooks/use-auth';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { UserService } from '@/lib/services/user-service';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 export function Navbar() {
   const pathname = usePathname();
   const { user, logout, isAuthenticated } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const isActive = (href: string) => pathname === href;
 
   const handleLogout = async () => {
     await logout();
     setShowMenu(false);
   };
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchRole = async () => {
+      try {
+        if (!isAuthenticated || !user) {
+          if (mounted) setIsAdmin(false);
+          return;
+        }
+        const service = new UserService();
+        const role = await service.getUserRole(user.uid);
+        if (mounted) setIsAdmin(role === 'admin');
+      } catch {
+        if (mounted) setIsAdmin(false);
+      }
+    };
+    fetchRole();
+    return () => { mounted = false; };
+  }, [isAuthenticated, user?.uid]);
 
   return (
     <header className="border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
@@ -50,15 +71,17 @@ export function Navbar() {
           >
             <Monitor size={16}/>Projector
           </Link>
-          <Link
-            href="/admin/login"
-            className={clsx(
-              'hover:text-brand-700 inline-flex items-center gap-2 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 rounded px-2 py-1',
-              (isActive('/admin') || isActive('/admin/login')) && 'text-brand-700 font-medium'
-            )}
-          >
-            <Upload size={16}/>Admin
-          </Link>
+          {isAuthenticated && isAdmin && (
+            <Link
+              href="/admin"
+              className={clsx(
+                'hover:text-brand-700 inline-flex items-center gap-2 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 rounded px-2 py-1',
+                (isActive('/admin') || isActive('/admin/login')) && 'text-brand-700 font-medium'
+              )}
+            >
+              <Upload size={16}/>Admin
+            </Link>
+          )}
           
           <ThemeToggle />
           
