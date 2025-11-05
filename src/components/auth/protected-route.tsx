@@ -1,5 +1,5 @@
 "use client";
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { UserService } from '@/lib/services/user-service';
@@ -21,18 +21,10 @@ export function ProtectedRoute({
   const [checkingAdmin, setCheckingAdmin] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push(redirectTo as any);
-      return;
-    }
+  // Use admin/login for admin routes, otherwise use provided redirectTo
+  const actualRedirectTo = requireAdmin ? '/admin/login' : redirectTo;
 
-    if (isAuthenticated && requireAdmin && !checkingAdmin) {
-      checkAdminRole();
-    }
-  }, [loading, isAuthenticated, requireAdmin]);
-
-  const checkAdminRole = async () => {
+  const checkAdminRole = useCallback(async () => {
     if (!user) return;
     
     setCheckingAdmin(true);
@@ -42,15 +34,27 @@ export function ProtectedRoute({
       setIsAdmin(role === 'admin');
       
       if (role !== 'admin') {
-        router.push('/' as any);
+        router.replace('/admin/login?error=unauthorized' as any);
       }
     } catch (error) {
       console.error('Error checking admin role:', error);
-      router.push('/' as any);
+      router.replace('/admin/login?error=unauthorized' as any);
     } finally {
       setCheckingAdmin(false);
     }
-  };
+  }, [user, router]);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      const returnTo = requireAdmin ? '/admin' : window.location.pathname;
+      router.replace(`${actualRedirectTo}?returnTo=${encodeURIComponent(returnTo)}` as any);
+      return;
+    }
+
+    if (isAuthenticated && requireAdmin && !checkingAdmin && !isAdmin) {
+      checkAdminRole();
+    }
+  }, [loading, isAuthenticated, requireAdmin, checkingAdmin, isAdmin, actualRedirectTo, router, checkAdminRole]);
 
   if (loading || checkingAdmin) {
     return (

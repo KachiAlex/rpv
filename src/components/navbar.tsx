@@ -5,13 +5,14 @@ import { BookOpenText, Monitor, Upload, LogIn, LogOut, User } from 'lucide-react
 import clsx from 'clsx';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { useState } from 'react';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 export function Navbar() {
   const pathname = usePathname();
   const { user, logout, isAuthenticated } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
   const isActive = (href: string) => pathname === href;
-  
+
   const handleLogout = async () => {
     await logout();
     setShowMenu(false);
@@ -22,12 +23,44 @@ export function Navbar() {
       <div className="container-max flex items-center justify-between py-4">
         <Link href="/" className="font-semibold tracking-tight">RPV Bible</Link>
         <nav className="flex items-center gap-6 text-sm">
-          <Link className={clsx('hover:text-brand-700', isActive('/') && 'text-brand-700 font-medium')} href="/">Home</Link>
-          <Link className={clsx('hover:text-brand-700 inline-flex items-center gap-2', isActive('/read') && 'text-brand-700 font-medium')} href="/read"><BookOpenText size={16}/>Read</Link>
-          <Link className={clsx('hover:text-brand-700 inline-flex items-center gap-2', isActive('/projector') && 'text-brand-700 font-medium')} href="/projector"><Monitor size={16}/>Projector</Link>
-          {isAuthenticated && (
-            <Link className={clsx('hover:text-brand-700 inline-flex items-center gap-2', isActive('/admin') && 'text-brand-700 font-medium')} href="/admin"><Upload size={16}/>Admin</Link>
-          )}
+          <Link 
+            className={clsx(
+              'hover:text-brand-700 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 rounded px-2 py-1',
+              isActive('/') && 'text-brand-700 font-medium'
+            )} 
+            href="/"
+          >
+            Home
+          </Link>
+          <Link 
+            className={clsx(
+              'hover:text-brand-700 inline-flex items-center gap-2 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 rounded px-2 py-1',
+              isActive('/read') && 'text-brand-700 font-medium'
+            )} 
+            href="/read"
+          >
+            <BookOpenText size={16}/>Read
+          </Link>
+          <Link 
+            className={clsx(
+              'hover:text-brand-700 inline-flex items-center gap-2 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 rounded px-2 py-1',
+              isActive('/projector') && 'text-brand-700 font-medium'
+            )} 
+            href="/projector"
+          >
+            <Monitor size={16}/>Projector
+          </Link>
+          <Link
+            href="/admin/login"
+            className={clsx(
+              'hover:text-brand-700 inline-flex items-center gap-2 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 rounded px-2 py-1',
+              (isActive('/admin') || isActive('/admin/login')) && 'text-brand-700 font-medium'
+            )}
+          >
+            <Upload size={16}/>Admin
+          </Link>
+          
+          <ThemeToggle />
           
           {isAuthenticated ? (
             <div className="relative">
@@ -63,7 +96,10 @@ export function Navbar() {
             </div>
           ) : (
             <Link 
-              className={clsx('hover:text-brand-700 inline-flex items-center gap-2', isActive('/login') && 'text-brand-700 font-medium')} 
+              className={clsx(
+                'hover:text-brand-700 inline-flex items-center gap-2 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 rounded px-2 py-1',
+                isActive('/login') && 'text-brand-700 font-medium'
+              )} 
               href="/login"
             >
               <LogIn size={16}/>Sign In

@@ -6,6 +6,8 @@ import { BookmarkButton } from '@/components/bookmark/bookmark-button';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { UserService } from '@/lib/services/user-service';
 import { SearchBar } from '@/components/search/search-bar';
+import { NoteEditor } from '@/components/notes/note-editor';
+import { FileText } from 'lucide-react';
 
 export default function ReadPage() {
   const { translations, current, loadSample, loadTranslations, setReference } = useBibleStore();
@@ -13,6 +15,7 @@ export default function ReadPage() {
   const [book, setBook] = useState<string>('');
   const [chapter, setChapter] = useState<number>(1);
   const [verse, setVerse] = useState<number>(1);
+  const [showNotes, setShowNotes] = useState(false);
   const userService = new UserService();
 
   useEffect(() => {
@@ -60,16 +63,9 @@ export default function ReadPage() {
     const c = b?.chapters.find((c) => c.number === chapter);
     if (!c || c.verses.length === 0) return [];
     
-    // Find the selected verse index
-    const selectedIndex = c.verses.findIndex(v => v.number === verse);
-    if (selectedIndex === -1) return c.verses.slice(0, 10); // Show first 10 if verse not found
-    
-    // Show 5 verses before and 5 after (or adjust based on available)
-    const startIndex = Math.max(0, selectedIndex - 5);
-    const endIndex = Math.min(c.verses.length, selectedIndex + 6); // +6 to include selected verse + 5 after
-    
-    return c.verses.slice(startIndex, endIndex);
-  }, [books, book, chapter, verse]);
+    // Show all verses in the chapter
+    return c.verses;
+  }, [books, book, chapter]);
 
   // Calculate previous and next chapter numbers
   const { previousChapter, nextChapter } = useMemo(() => {
@@ -202,24 +198,38 @@ export default function ReadPage() {
                 id={`verse-${v.number}`}
                 className={`p-4 rounded-lg transition-colors ${
                   v.number === verse 
-                    ? 'bg-brand-50 border-2 border-brand-300' 
-                    : 'bg-neutral-50 border border-neutral-200'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 border-2 border-brand-300 dark:border-brand-600' 
+                    : 'bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
                 }`}
               >
                 <div className="flex items-start justify-between mb-2">
-                  <div className="text-sm font-semibold text-brand-700">
+                  <div className="text-sm font-semibold text-brand-700 dark:text-brand-400">
                     {book} {chapter}:{v.number}
                   </div>
                   {current && (
-                    <BookmarkButton
-                      translationId={current.id}
-                      book={book}
-                      chapter={chapter}
-                      verse={v.number}
-                    />
+                    <div className="flex items-center gap-2">
+                      <BookmarkButton
+                        translationId={current.id}
+                        book={book}
+                        chapter={chapter}
+                        verse={v.number}
+                      />
+                      {isAuthenticated && (
+                        <button
+                          onClick={() => {
+                            setVerse(v.number);
+                            setShowNotes(true);
+                          }}
+                          className="p-2 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors"
+                          title="Add note"
+                        >
+                          <FileText size={18} className="text-neutral-400" />
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
-                <div className="text-lg leading-relaxed text-neutral-900">
+                <div className="text-lg leading-relaxed text-neutral-900 dark:text-neutral-100">
                   {v.text}
                 </div>
               </div>
@@ -227,6 +237,16 @@ export default function ReadPage() {
           </div>
         )}
       </section>
+
+      {showNotes && current && (
+        <NoteEditor
+          translationId={current.id}
+          book={book}
+          chapter={chapter}
+          verse={verse}
+          onClose={() => setShowNotes(false)}
+        />
+      )}
     </div>
   );
 }

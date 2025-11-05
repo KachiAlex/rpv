@@ -43,6 +43,14 @@ export async function parseDocument(file: File, translationId: string, translati
   // Parse chapters and verses
   const chapters = parseBibleText(fullText, bookName);
   
+  // Debug: Log parsing results
+  const totalChapters = chapters.length;
+  const totalVerses = chapters.reduce((sum, ch) => sum + ch.verses.length, 0);
+  console.log(`Parsed ${totalChapters} chapters with ${totalVerses} total verses`);
+  chapters.forEach((ch, idx) => {
+    console.log(`Chapter ${ch.number}: ${ch.verses.length} verses`);
+  });
+  
   return {
     id: translationId,
     name: translationName,
@@ -71,19 +79,15 @@ function parseBibleText(text: string, bookName: string): Chapter[] {
     /^(\d+):\s*$/m,        // "1:"
   ];
   
-  // Common patterns for verse markers
-  // Handles: "1. Text", "1: Text", "1 Text"
-  const versePattern = /^(\d+)[\.\:\s]/m;
-  
-  // Split text into lines
-  const lines = text.split(/\n+/).filter(line => line.trim().length > 0);
+  // Split text into lines - preserve empty lines for context but filter completely empty ones
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
   
   let currentChapter: Chapter | null = null;
   let currentVerse: Verse | null = null;
   let verseTextBuffer: string[] = [];
   
   // If document starts with verses (no chapter header), create chapter 1
-  const firstLine = lines[0]?.trim() || '';
+  const firstLine = lines[0] || '';
   const startsWithVerse = /^(\d+)[\.\:\s]+/.test(firstLine);
   const startsWithChapter = chapterPatterns.some(p => p.test(firstLine));
   
@@ -92,24 +96,38 @@ function parseBibleText(text: string, bookName: string): Chapter[] {
   }
   
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const line = lines[i];
     
     // Check if this line is a chapter marker
     let chapterMatch = null;
     for (const pattern of chapterPatterns) {
       chapterMatch = line.match(pattern);
-      if (chapterMatch) break;
+      if (chapterMatch) {
+        // Make sure it's not just a verse number at the start of a line
+        // If line has text after the number, it's likely a verse, not a chapter
+        const afterMatch = line.substring(chapterMatch[0].length).trim();
+        if (afterMatch.length > 0 && /^[a-zA-Z]/.test(afterMatch)) {
+          // Has text after, likely a verse, skip
+          chapterMatch = null;
+          continue;
+        }
+        break;
+      }
     }
     
     if (chapterMatch) {
-      // Save previous chapter if exists
+      // Save previous verse if exists
       if (currentChapter && currentVerse) {
         currentVerse.text = verseTextBuffer.join(' ').trim();
-        currentChapter.verses.push(currentVerse);
+        if (currentVerse.text) {
+          currentChapter.verses.push(currentVerse);
+        }
         currentVerse = null;
         verseTextBuffer = [];
       }
-      if (currentChapter) {
+      
+      // Save previous chapter if exists
+      if (currentChapter && currentChapter.verses.length > 0) {
         chapters.push(currentChapter);
       }
       
@@ -120,8 +138,10 @@ function parseBibleText(text: string, bookName: string): Chapter[] {
     }
     
     // Check if this line starts with a verse number
-    // Handle formats: "1. Text", "1: Text", "1 Text"
-    const verseMatch = line.match(/^(\d+)[\.\:\s]+(.+)$/);
+    // Handle formats: "1. Text", "1: Text", "1 Text", "1 Text here", "1Text" (no space)
+    // More flexible pattern to catch various formats
+    // Match patterns like: "1. ", "1: ", "1 ", "1Text" where 1 is followed by . : or space
+    const verseMatch = line.match(/^(\d+)[\.\:\s]+(.+)$/) || line.match(/^(\d+)([a-zA-Z].+)$/);
     if (verseMatch) {
       // If no chapter exists, create chapter 1
       if (!currentChapter) {
@@ -129,39 +149,78 @@ function parseBibleText(text: string, bookName: string): Chapter[] {
       }
       
       // Save previous verse if exists
-      if (currentVerse && verseTextBuffer.length > 0) {
+      if (currentVerse) {
         currentVerse.text = verseTextBuffer.join(' ').trim();
-        currentChapter.verses.push(currentVerse);
+        if (currentVerse.text) {
+          currentChapter.verses.push(currentVerse);
+        }
       }
       
       // Start new verse
       const verseNum = parseInt(verseMatch[1], 10);
-      const verseText = verseMatch[2].trim(); // Get text after number and separator
+      // Get text after number and separator (handle both formats)
+      const verseText = verseMatch[2] ? verseMatch[2].trim() : '';
       currentVerse = { number: verseNum, text: verseText };
-      verseTextBuffer = [verseText];
+      verseTextBuffer = verseText ? [verseText] : [];
       continue;
     }
     
     // If we have a current verse, this line is continuation of verse text
+    // This handles verses that span multiple lines
     if (currentVerse) {
+      // Check if this line might be a new verse (starts with a number)
+      // Be more aggressive in detecting new verses - check for both formats
+      const potentialNewVerse = line.match(/^(\d+)[\.\:\s]+(.+)$/) || line.match(/^(\d+)([a-zA-Z].+)$/);
+      if (potentialNewVerse) {
+        const potentialVerseNum = parseInt(potentialNewVerse[1], 10);
+        const potentialText = potentialNewVerse[2] ? potentialNewVerse[2].trim() : '';
+        
+        // If this verse number is greater than current, it's likely a new verse
+        // Allow sequential verses (1, 2, 3, 4, 5, 6, 7, ...) or reasonable jumps
+        // Also handle verse 1 after a high number (might indicate new chapter/section)
+        const isSequential = potentialVerseNum === currentVerse.number + 1;
+        const isWithinRange = potentialVerseNum > currentVerse.number && potentialVerseNum <= currentVerse.number + 50;
+        const isReset = potentialVerseNum === 1 && currentVerse.number > 10;
+        
+        if (isSequential || isWithinRange || isReset) {
+          // Save current verse
+          currentVerse.text = verseTextBuffer.join(' ').trim();
+          if (currentVerse.text) {
+            currentChapter?.verses.push(currentVerse);
+          }
+          
+          // Start new verse
+          currentVerse = { number: potentialVerseNum, text: potentialText };
+          verseTextBuffer = potentialText ? [potentialText] : [];
+          continue;
+        }
+      }
+      
+      // Otherwise, continue accumulating verse text
       verseTextBuffer.push(line);
     } else if (currentChapter) {
       // If we have a chapter but no verse, try to detect verse number at start
-      // Handle formats: "1. Text", "1: Text", "1 Text"
-      const potentialVerse = line.match(/^(\d+)[\.\:\s]+(.+)$/);
+      // Be more flexible with verse detection
+      const potentialVerse = line.match(/^(\d+)[\.\:\s]+(.+)$/) || line.match(/^(\d+)([a-zA-Z].+)$/);
       if (potentialVerse) {
         const verseNum = parseInt(potentialVerse[1], 10);
-        const verseText = potentialVerse[2].trim();
+        const verseText = potentialVerse[2] ? potentialVerse[2].trim() : '';
         currentVerse = { number: verseNum, text: verseText };
-        verseTextBuffer = [verseText];
+        verseTextBuffer = verseText ? [verseText] : [];
+      } else if (line.trim().length > 0) {
+        // If there's text but no verse marker, check if it might be a verse without a number
+        // For now, we'll skip lines without verse markers when we don't have a current verse
+        // This prevents orphaned text
       }
     }
   }
   
   // Save last verse and chapter
-  if (currentVerse && verseTextBuffer.length > 0) {
+  if (currentVerse) {
     currentVerse.text = verseTextBuffer.join(' ').trim();
-    currentChapter?.verses.push(currentVerse);
+    if (currentVerse.text && currentChapter) {
+      currentChapter.verses.push(currentVerse);
+    }
   }
   if (currentChapter && currentChapter.verses.length > 0) {
     chapters.push(currentChapter);

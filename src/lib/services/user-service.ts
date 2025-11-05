@@ -227,5 +227,20 @@ export class UserService {
     
     return (userDoc.data().role || 'user') as 'user' | 'admin';
   }
+
+  async setAdminRole(userId: string, isAdmin: boolean): Promise<void> {
+    const db = this.getDb();
+    const userRef = doc(db, 'users', userId);
+    const userDoc = await getDoc(userRef);
+    
+    if (!userDoc.exists()) {
+      throw new Error('User profile does not exist. Create user profile first.');
+    }
+    
+    await updateDoc(userRef, {
+      role: isAdmin ? 'admin' : 'user',
+      updatedAt: new Date(),
+    });
+  }
 }
 

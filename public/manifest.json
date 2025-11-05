@@ -1,0 +1,43 @@
+{
+  "name": "RPV Bible",
+  "short_name": "RPV Bible",
+  "description": "Unique Bible app for web, mobile, and projection",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#7c3aed",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["books", "education", "religion"],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Read Bible",
+      "short_name": "Read",
+      "description": "Read the Bible",
+      "url": "/read",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Projector",
+      "short_name": "Projector",
+      "description": "Projector view",
+      "url": "/projector",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
+
