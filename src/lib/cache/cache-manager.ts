@@ -108,8 +108,9 @@ export class CacheManager {
     // Save to Firestore (async, can fail)
     const isOnline = NetworkStatus.getOnline();
     try {
-      const { db } = await import('../firebase').then(m => m.getFirebase());
-      if (db && isOnline) {
+      const { db, auth } = await import('../firebase').then(m => m.getFirebase());
+      const isAuthenticated = !!auth && !!auth.currentUser;
+      if (db && isOnline && isAuthenticated) {
         await this.repository.saveTranslation(translation);
       } else if (!isOnline) {
         // Queue for later sync
@@ -119,12 +120,15 @@ export class CacheManager {
         });
       }
     } catch (error) {
-      console.warn('Firestore save failed, queuing for later:', error);
-      // Queue for retry
-      await this.offlineQueue.addOperation({
-        type: 'saveTranslation',
-        data: translation,
-      });
+      const message = String(error?.toString?.() || error);
+      const permissionDenied = message.includes('Missing or insufficient permissions') || message.includes('permission-denied');
+      if (!permissionDenied) {
+        // Queue for retry only for transient errors
+        await this.offlineQueue.addOperation({
+          type: 'saveTranslation',
+          data: translation,
+        });
+      }
     }
   }
 
@@ -148,8 +152,9 @@ export class CacheManager {
     // Save to Firestore or queue
     const isOnline = NetworkStatus.getOnline();
     try {
-      const { db } = await import('../firebase').then(m => m.getFirebase());
-      if (db && isOnline) {
+      const { db, auth } = await import('../firebase').then(m => m.getFirebase());
+      const isAuthenticated = !!auth && !!auth.currentUser;
+      if (db && isOnline && isAuthenticated) {
         await this.repository.saveTranslation(merged);
       } else if (!isOnline) {
         await this.offlineQueue.addOperation({
@@ -158,11 +163,14 @@ export class CacheManager {
         });
       }
     } catch (error) {
-      console.warn('Firestore save failed, queuing for later:', error);
-      await this.offlineQueue.addOperation({
-        type: 'mergeTranslation',
-        data: merged,
-      });
+      const message = String(error?.toString?.() || error);
+      const permissionDenied = message.includes('Missing or insufficient permissions') || message.includes('permission-denied');
+      if (!permissionDenied) {
+        await this.offlineQueue.addOperation({
+          type: 'mergeTranslation',
+          data: merged,
+        });
+      }
     }
 
     return merged;

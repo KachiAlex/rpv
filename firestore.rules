@@ -49,6 +49,21 @@ service cloud.firestore {
       
       // Allow admins to update any user document (including role)
       allow update: if isAdmin();
+
+      // Subcollection: bookmarks — user can manage their own
+      match /bookmarks/{bookmarkId} {
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        allow create: if isAuthenticated() && request.auth.uid == userId;
+        allow delete: if isAuthenticated() && request.auth.uid == userId;
+        allow update: if false; // not used; recreate to modify
+      }
+
+      // Subcollection: readingHistory — user can read and write their own
+      match /readingHistory/{entryId} {
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        allow create: if isAuthenticated() && request.auth.uid == userId;
+        allow update: if isAuthenticated() && request.auth.uid == userId;
+      }
     }
   }
 }
