@@ -305,6 +305,17 @@ export class CacheManager {
   }
 
   private async processPendingOperations(): Promise<void> {
+    try {
+      const { auth } = await import('../firebase').then(m => m.getFirebase());
+      const isAuthenticated = !!auth && !!auth.currentUser;
+      if (!isAuthenticated) {
+        // Skip processing when user is not signed in to avoid permission errors
+        return;
+      }
+    } catch {
+      return;
+    }
+
     await this.offlineQueue.processQueue({
       saveTranslation: async (translation: Translation) => {
         const { db } = await import('../firebase').then(m => m.getFirebase());
