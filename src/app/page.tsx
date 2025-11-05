@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { HomePreview } from '@/components/home/home-preview';
 
 export default function HomePage() {
   return (
@@ -23,7 +24,7 @@ export default function HomePage() {
           </div>
         </div>
         <div className="rounded-xl border p-6 bg-white shadow-sm">
-          <div className="aspect-video rounded-lg bg-gradient-to-br from-brand-100 to-brand-300" />
+          <HomePreview />
           <p className="mt-3 text-sm text-neutral-600">Clean reader and projector-friendly display with large typography and contrast.</p>
         </div>
       </section>
