@@ -100,11 +100,40 @@ export const useBibleStore = create<BibleState>((set, get) => {
           return;
         }
 
-        set({ 
-          translations, 
-          current: translations[0] ?? null,
-          isLoading: false 
-        });
+        // If only sample or missing built-in seeds, try to fetch and merge KJV/ASV once
+        try {
+          const haveIds = new Set(translations.map(t => t.id));
+          const wanted = ['kjv', 'asv'];
+          const missing = wanted.filter(id => !haveIds.has(id));
+          const newlyLoaded: Translation[] = [];
+          if (missing.length > 0) {
+            for (const id of missing) {
+              const res = await fetch(`/translations/${id}.json`, { cache: 'no-store' });
+              if (res.ok) {
+                const data = await res.json();
+                const list = (data?.translations ?? []) as Translation[];
+                for (const t of list) {
+                  await translationService.saveTranslation(t);
+                  newlyLoaded.push(t);
+                }
+              }
+            }
+          }
+
+          const mergedList = newlyLoaded.length > 0 ? [...translations, ...newlyLoaded] : translations;
+
+          set({ 
+            translations: mergedList, 
+            current: mergedList[0] ?? null,
+            isLoading: false 
+          });
+        } catch {
+          set({ 
+            translations, 
+            current: translations[0] ?? null,
+            isLoading: false 
+          });
+        }
 
         // Subscribe to real-time updates from Firestore
         try {
