@@ -40,9 +40,11 @@ export function Navbar() {
   }, [isAuthenticated, user?.uid]);
 
   return (
-    <header className="border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+    <header className="border-b border-brand-200 dark:border-brand-800 bg-gradient-to-r from-white/95 via-brand-50/50 to-white/95 dark:from-neutral-900/95 dark:via-brand-900/30 dark:to-neutral-900/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-neutral-900/60 shadow-sm">
       <div className="container-max flex items-center justify-between py-4">
-        <Link href="/" className="font-semibold tracking-tight">RPV Bible</Link>
+        <Link href="/" className="font-bold text-xl tracking-tight bg-gradient-to-r from-brand-600 via-accent-purple to-accent-pink bg-clip-text text-transparent">
+          RPV Bible
+        </Link>
         <nav className="flex items-center gap-6 text-sm">
           <Link 
             className={clsx(

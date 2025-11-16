@@ -13,12 +13,12 @@ type BibleState = {
   
   // Actions
   loadTranslations: () => Promise<void>;
-  loadSample: () => void;
+  loadSample: () => Promise<void>;
   setCurrent: (id: string) => void;
   setReference: (ref: Reference) => void;
   setChannelId: (id: string) => void;
   sendToProjector: (ref: Reference) => Promise<void>;
-  subscribeToChannel: () => void;
+  subscribeToChannel: () => Promise<void>;
   importJson: (data: { translations: Translation[] }) => Promise<void>;
   mergeTranslation: (translation: Translation) => Promise<void>;
   addOrUpdateVerse: (args: { translationId: string; book: string; chapter: number; verse: number; text: string }) => Promise<void>;
@@ -42,6 +42,13 @@ const SAMPLE: Translation = {
   ]
 };
 
+// Permanent RPV translation - always available in the app
+const PERMANENT_RPV: Translation = {
+  id: 'RPV',
+  name: 'Redemption Project Version',
+  books: []
+};
+
 export const useBibleStore = create<BibleState>((set, get) => {
   const translationService = new TranslationService();
   const projectionService = new ProjectionService();
@@ -63,6 +70,41 @@ export const useBibleStore = create<BibleState>((set, get) => {
         // Load from cache (IndexedDB) or Firestore
         const translations = await translationService.getAllTranslations();
         
+        // Ensure permanent RPV translation exists
+        const ensureRPVTranslation = async (existingTranslations: Translation[]): Promise<Translation[]> => {
+          const hasRPV = existingTranslations.some(t => t.id === 'RPV');
+          if (!hasRPV) {
+            try {
+              // Check if RPV exists in Firestore
+              const rpvFromStore = await translationService.getTranslation('RPV');
+              if (rpvFromStore) {
+                // Use existing RPV from store
+                return [rpvFromStore, ...existingTranslations.filter(t => t.id !== 'RPV')];
+              } else {
+                // Create new RPV translation
+                await translationService.saveTranslation(PERMANENT_RPV);
+                return [PERMANENT_RPV, ...existingTranslations];
+              }
+            } catch (error) {
+              // If save fails, still add it locally
+              console.warn('Could not save RPV translation to store, adding locally:', error);
+              return [PERMANENT_RPV, ...existingTranslations];
+            }
+          } else {
+            // RPV exists, but ensure it has the correct name
+            const rpvIndex = existingTranslations.findIndex(t => t.id === 'RPV');
+            if (rpvIndex >= 0) {
+              const updated = [...existingTranslations];
+              updated[rpvIndex] = {
+                ...updated[rpvIndex],
+                name: 'Redemption Project Version'
+              };
+              return updated;
+            }
+            return existingTranslations;
+          }
+        };
+        
         if (translations.length === 0) {
           // No translations: try to import built-in seeds (KJV/ASV), then fallback to sample
           try {
@@ -78,9 +120,8 @@ export const useBibleStore = create<BibleState>((set, get) => {
                   const data = await res.json();
                   const list = (data?.translations ?? []) as Translation[];
                   if (Array.isArray(list) && list.length > 0) {
-                    // Save via service so they persist
+                    // Load seeds locally without writing to Firestore (to avoid permission/write errors)
                     for (const t of list) {
-                      await translationService.saveTranslation(t);
                       loaded.push(t);
                     }
                   }
@@ -89,20 +130,24 @@ export const useBibleStore = create<BibleState>((set, get) => {
             }
 
             if (loaded.length > 0) {
-              set({ translations: loaded, current: loaded[0], isLoading: false });
+              const withRPV = await ensureRPVTranslation(loaded);
+              set({ translations: withRPV, current: withRPV[0], isLoading: false });
               return;
             }
           } catch {}
 
           // Fallback to sample
-          get().loadSample();
-          set({ isLoading: false });
+          const withRPV = await ensureRPVTranslation([SAMPLE]);
+          set({ translations: withRPV, current: withRPV[0], isLoading: false });
           return;
         }
 
+        // Ensure RPV is present and at the beginning
+        const translationsWithRPV = await ensureRPVTranslation(translations);
+
         // If only sample or missing built-in seeds, try to fetch and merge KJV/ASV once
         try {
-          const haveIds = new Set(translations.map(t => t.id));
+          const haveIds = new Set(translationsWithRPV.map(t => t.id));
           const wanted = ['kjv', 'asv'];
           const missing = wanted.filter(id => !haveIds.has(id));
           const newlyLoaded: Translation[] = [];
@@ -113,14 +158,14 @@ export const useBibleStore = create<BibleState>((set, get) => {
                 const data = await res.json();
                 const list = (data?.translations ?? []) as Translation[];
                 for (const t of list) {
-                  await translationService.saveTranslation(t);
+                  // Do not write seeds to Firestore; keep local
                   newlyLoaded.push(t);
                 }
               }
             }
           }
 
-          const mergedList = newlyLoaded.length > 0 ? [...translations, ...newlyLoaded] : translations;
+          const mergedList = newlyLoaded.length > 0 ? [...translationsWithRPV, ...newlyLoaded] : translationsWithRPV;
 
           set({ 
             translations: mergedList, 
@@ -129,8 +174,8 @@ export const useBibleStore = create<BibleState>((set, get) => {
           });
         } catch {
           set({ 
-            translations, 
-            current: translations[0] ?? null,
+            translations: translationsWithRPV, 
+            current: translationsWithRPV[0] ?? null,
             isLoading: false 
           });
         }
@@ -139,8 +184,82 @@ export const useBibleStore = create<BibleState>((set, get) => {
         try {
           const { db } = await import('./firebase').then(m => m.getFirebase());
           if (db) {
-            const unsubscribe = translationService.subscribeToAllTranslations((translations) => {
-              set({ translations, current: get().current ?? translations[0] ?? null });
+            const unsubscribe = translationService.subscribeToAllTranslations((incoming) => {
+              const state = get();
+              const existing = Array.isArray(state.translations) ? state.translations : [];
+              const incomingArray = Array.isArray(incoming) ? incoming : [];
+
+              // If we have incoming data, always use it (it's from Firestore, the source of truth)
+              if (incomingArray.length > 0) {
+                const byId = new Map<string, typeof incomingArray[number] | typeof existing[number]>();
+                const sizeOf = (t: Translation | undefined) => {
+                  if (!t || !Array.isArray(t.books)) return 0;
+                  return t.books.reduce((sumB, b) => {
+                    if (!b || !Array.isArray(b.chapters)) return sumB;
+                    return sumB + b.chapters.reduce((sumC, c) => {
+                      if (!c || !Array.isArray(c.verses)) return sumC;
+                      return sumC + c.verses.length;
+                    }, 0);
+                  }, 0);
+                };
+
+                // Seed existing first (for any translations not in incoming)
+                for (const t of existing) {
+                  if (t && t.id) {
+                    const incomingTranslation = incomingArray.find(inc => inc && inc.id === t.id);
+                    // Only keep existing if it's not in incoming or if it's larger
+                    if (!incomingTranslation || sizeOf(t) > sizeOf(incomingTranslation)) {
+                      byId.set(t.id, t);
+                    }
+                  }
+                }
+                // Always prefer incoming (Firestore) data - it's the source of truth
+                for (const t of incomingArray) {
+                  if (t && t.id) {
+                    const prev = byId.get(t.id) as Translation | undefined;
+                    // Prefer incoming if it exists, or if it's larger
+                    if (!prev || sizeOf(t) >= sizeOf(prev)) {
+                      byId.set(t.id, t);
+                    }
+                  }
+                }
+
+                const merged = Array.from(byId.values()).filter((t): t is Translation => t !== null && t !== undefined) as Translation[];
+                
+                // Ensure RPV is always present and at the beginning
+                const ensureRPVInMerged = async (translations: Translation[]): Promise<Translation[]> => {
+                  const hasRPV = translations.some(t => t.id === 'RPV');
+                  if (!hasRPV) {
+                    try {
+                      const rpvFromStore = await translationService.getTranslation('RPV');
+                      if (rpvFromStore) {
+                        return [rpvFromStore, ...translations];
+                      } else {
+                        await translationService.saveTranslation(PERMANENT_RPV);
+                        return [PERMANENT_RPV, ...translations];
+                      }
+                    } catch {
+                      return [PERMANENT_RPV, ...translations];
+                    }
+                  } else {
+                    // Ensure RPV has correct name and is at the beginning
+                    const rpvIndex = translations.findIndex(t => t.id === 'RPV');
+                    const updated = [...translations];
+                    if (rpvIndex > 0) {
+                      const rpv = updated.splice(rpvIndex, 1)[0];
+                      updated[0] = { ...rpv, name: 'Redemption Project Version' };
+                      return [updated[0], ...updated.slice(1)];
+                    } else if (rpvIndex === 0) {
+                      updated[0] = { ...updated[0], name: 'Redemption Project Version' };
+                      return updated;
+                    }
+                  }
+                  return translations;
+                };
+                
+                const finalMerged = await ensureRPVInMerged(merged);
+                set({ translations: finalMerged, current: state.current ?? finalMerged[0] ?? null });
+              }
             });
             
             const unsubscribers = get()._unsubscribers;
@@ -159,14 +278,26 @@ export const useBibleStore = create<BibleState>((set, get) => {
           isLoading: false 
         });
         // Fallback to sample data
-        get().loadSample();
+        await get().loadSample();
       }
     },
 
-    loadSample: () => {
+    loadSample: async () => {
       const state = get();
       if (state.translations.length === 0) {
-        set({ translations: [SAMPLE], current: SAMPLE });
+        // Ensure RPV is always included with sample
+        try {
+          const rpvFromStore = await translationService.getTranslation('RPV');
+          if (rpvFromStore) {
+            set({ translations: [rpvFromStore, SAMPLE], current: rpvFromStore });
+          } else {
+            await translationService.saveTranslation(PERMANENT_RPV);
+            set({ translations: [PERMANENT_RPV, SAMPLE], current: PERMANENT_RPV });
+          }
+        } catch {
+          // If save fails, still add it locally
+          set({ translations: [PERMANENT_RPV, SAMPLE], current: PERMANENT_RPV });
+        }
       }
     },
 
@@ -212,7 +343,7 @@ export const useBibleStore = create<BibleState>((set, get) => {
       }
     },
 
-    subscribeToChannel: () => {
+    subscribeToChannel: async () => {
       const { channelId, _projectionService } = get();
       const channel = channelId || 'default';
 
@@ -220,6 +351,16 @@ export const useBibleStore = create<BibleState>((set, get) => {
       const unsubscribers = get()._unsubscribers;
       if (unsubscribers.channel) {
         unsubscribers.channel();
+      }
+
+      // Load initial channel data first
+      try {
+        const initialRef = await _projectionService.getChannel(channel);
+        if (initialRef) {
+          set({ projectorRef: initialRef });
+        }
+      } catch (error) {
+        console.warn('Error loading initial channel data:', error);
       }
 
       // Check Firebase availability
@@ -232,6 +373,9 @@ export const useBibleStore = create<BibleState>((set, get) => {
           const unsubscribe = _projectionService.subscribeToChannel(channel, (ref) => {
             if (ref) {
               set({ projectorRef: ref });
+            } else {
+              // If ref is null, clear the projector
+              set({ projectorRef: { translation: '', book: '', chapter: 0, verse: 0, text: '' } });
             }
           });
           unsubscribers.channel = unsubscribe;
@@ -249,6 +393,9 @@ export const useBibleStore = create<BibleState>((set, get) => {
           const raw = localStorage.getItem(`rpv:projector:${channel}`);
           if (raw) {
             set({ projectorRef: JSON.parse(raw) });
+          } else {
+            // Clear if no data
+            set({ projectorRef: { translation: '', book: '', chapter: 0, verse: 0, text: '' } });
           }
         } catch {}
       };

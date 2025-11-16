@@ -63,12 +63,26 @@ export class UserService {
   async savePreferences(userId: string, preferences: Partial<UserPreferences>): Promise<void> {
     const db = this.getDb();
     const userRef = doc(db, 'users', userId);
+    const userDoc = await getDoc(userRef);
+    
     const current = await this.getPreferences(userId);
     
-    await updateDoc(userRef, {
-      preferences: { ...current, ...preferences },
-      updatedAt: new Date(),
-    });
+    // Use setDoc with merge to handle both create and update cases
+    if (userDoc.exists()) {
+      // Document exists, update it
+      await updateDoc(userRef, {
+        preferences: { ...current, ...preferences },
+        updatedAt: new Date(),
+      });
+    } else {
+      // Document doesn't exist, create it
+      await setDoc(userRef, {
+        uid: userId,
+        preferences: { ...DEFAULT_PREFERENCES, ...preferences },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }, { merge: true });
+    }
   }
 
   // Bookmarks

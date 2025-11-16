@@ -61,38 +61,84 @@ export class CacheManager {
   }
 
   async getAllTranslations(): Promise<Translation[]> {
-    // Try IndexedDB first (faster for offline)
+    const isOnline = NetworkStatus.getOnline();
+    
+    console.log('[CacheManager] getAllTranslations - Starting load, isOnline:', isOnline);
+    
+    // When online, always try Firestore first to get the latest data
+    if (isOnline) {
+      try {
+        const { db } = await import('../firebase').then(m => m.getFirebase());
+        if (db) {
+          console.log('[CacheManager] Loading translations from Firestore...');
+          const translations = await this.repository.getAllTranslations();
+          console.log('[CacheManager] Loaded', translations.length, 'translations from Firestore:', translations.map(t => ({ id: t.id, name: t.name, booksCount: t.books?.length || 0 })));
+          
+          // Update all caches with latest Firestore data
+          if (translations.length > 0) {
+            translations.forEach(t => {
+              this.memoryCache.set(t.id, t);
+              this.indexedDB.saveTranslation(t).catch(() => {});
+            });
+            
+            console.log('[CacheManager] Returning', translations.length, 'translations from Firestore');
+            return translations;
+          } else {
+            console.log('[CacheManager] No translations found in Firestore, trying IndexedDB...');
+          }
+        } else {
+          console.warn('[CacheManager] Firestore DB not available');
+        }
+      } catch (error) {
+        console.warn('[CacheManager] Firestore read failed, trying IndexedDB:', error);
+      }
+    }
+
+    // Fallback to IndexedDB (for offline or if Firestore fails)
     try {
+      console.log('[CacheManager] Loading translations from IndexedDB...');
       const cached = await this.indexedDB.getAllTranslations();
+      console.log('[CacheManager] Loaded', cached.length, 'translations from IndexedDB:', cached.map(t => ({ id: t.id, name: t.name, booksCount: t.books?.length || 0 })));
+      
       if (cached.length > 0) {
         // Update memory cache
         cached.forEach(t => this.memoryCache.set(t.id, t));
         
-        // Try to refresh from Firestore in background
-        this.refreshFromFirestore().catch(() => {});
+        // If online, try to refresh from Firestore in background
+        if (isOnline) {
+          console.log('[CacheManager] Refreshing from Firestore in background...');
+          this.refreshFromFirestore().catch((err) => {
+            console.warn('[CacheManager] Background refresh failed:', err);
+          });
+        }
         
+        console.log('[CacheManager] Returning', cached.length, 'translations from IndexedDB');
         return cached;
       }
     } catch (error) {
-      console.warn('IndexedDB read failed, trying Firestore:', error);
+      console.warn('[CacheManager] IndexedDB read failed:', error);
     }
 
-    // Fallback to Firestore
-    try {
-      const { db } = await import('../firebase').then(m => m.getFirebase());
-      if (db) {
-        const translations = await this.repository.getAllTranslations();
-        
-        // Update all caches
-        translations.forEach(t => {
-          this.memoryCache.set(t.id, t);
-          this.indexedDB.saveTranslation(t).catch(() => {});
-        });
-        
-        return translations;
+    // If offline and Firestore failed, try Firestore one more time (might be cached)
+    if (!isOnline) {
+      try {
+        const { db } = await import('../firebase').then(m => m.getFirebase());
+        if (db) {
+          const translations = await this.repository.getAllTranslations();
+          
+          if (translations.length > 0) {
+            // Update all caches
+            translations.forEach(t => {
+              this.memoryCache.set(t.id, t);
+              this.indexedDB.saveTranslation(t).catch(() => {});
+            });
+            
+            return translations;
+          }
+        }
+      } catch (error) {
+        console.warn('Firestore read failed (offline fallback):', error);
       }
-    } catch (error) {
-      console.warn('Firestore read failed:', error);
     }
 
     return [];
@@ -111,9 +157,24 @@ export class CacheManager {
       const { db, auth } = await import('../firebase').then(m => m.getFirebase());
       const isAuthenticated = !!auth && !!auth.currentUser;
       if (db && isOnline && isAuthenticated) {
-        await this.repository.saveTranslation(translation);
+        // Always save all books to Firestore
+        const booksToWrite = translation.books || [];
+        if (booksToWrite.length > 0) {
+          // Save all books (chunked storage handles large datasets)
+          await this.repository.saveBooks(translation.id, translation.name, booksToWrite);
+        } else {
+          // Save empty translation metadata
+          await this.repository.saveTranslation(translation);
+        }
       } else if (!isOnline) {
         // Queue for later sync
+        await this.offlineQueue.addOperation({
+          type: 'saveTranslation',
+          data: translation,
+        });
+      } else if (!isAuthenticated) {
+        // Queue for when user authenticates
+        console.warn('User not authenticated, queuing translation save');
         await this.offlineQueue.addOperation({
           type: 'saveTranslation',
           data: translation,
@@ -122,12 +183,15 @@ export class CacheManager {
     } catch (error) {
       const message = String(error?.toString?.() || error);
       const permissionDenied = message.includes('Missing or insufficient permissions') || message.includes('permission-denied');
+      console.error('Error saving translation to Firestore:', error);
       if (!permissionDenied) {
         // Queue for retry only for transient errors
         await this.offlineQueue.addOperation({
           type: 'saveTranslation',
           data: translation,
         });
+      } else {
+        console.warn('Permission denied saving translation - user may need to authenticate');
       }
     }
   }
@@ -154,9 +218,41 @@ export class CacheManager {
     try {
       const { db, auth } = await import('../firebase').then(m => m.getFirebase());
       const isAuthenticated = !!auth && !!auth.currentUser;
+      
+      console.log('[CacheManager] mergeTranslation - Saving to Firestore:', {
+        translationId: merged.id,
+        translationName: merged.name,
+        booksCount: merged.books?.length || 0,
+        isOnline,
+        isAuthenticated,
+        hasDb: !!db,
+        userId: auth?.currentUser?.uid || 'none'
+      });
+      
       if (db && isOnline && isAuthenticated) {
-        await this.repository.saveTranslation(merged);
+        // Save ALL merged books (not just incoming ones) to ensure persistence
+        if ((merged.books || []).length > 0) {
+          console.log('[CacheManager] Saving', merged.books.length, 'books to Firestore for translation:', merged.id);
+          await this.repository.saveBooks(merged.id, merged.name, merged.books);
+          console.log('[CacheManager] Successfully saved translation to Firestore:', merged.id);
+        } else {
+          await this.repository.saveTranslation(merged);
+          console.log('[CacheManager] Saved empty translation metadata to Firestore:', merged.id);
+        }
       } else if (!isOnline) {
+        console.warn('[CacheManager] Offline - queuing translation for later sync:', merged.id);
+        await this.offlineQueue.addOperation({
+          type: 'mergeTranslation',
+          data: merged,
+        });
+      } else if (!isAuthenticated) {
+        console.warn('[CacheManager] Not authenticated - queuing translation for later sync:', merged.id);
+        await this.offlineQueue.addOperation({
+          type: 'mergeTranslation',
+          data: merged,
+        });
+      } else if (!db) {
+        console.warn('[CacheManager] Firestore not initialized - queuing translation:', merged.id);
         await this.offlineQueue.addOperation({
           type: 'mergeTranslation',
           data: merged,
@@ -165,11 +261,18 @@ export class CacheManager {
     } catch (error) {
       const message = String(error?.toString?.() || error);
       const permissionDenied = message.includes('Missing or insufficient permissions') || message.includes('permission-denied');
+      console.error('[CacheManager] Error saving translation to Firestore:', {
+        translationId: merged.id,
+        error: message,
+        permissionDenied
+      });
       if (!permissionDenied) {
         await this.offlineQueue.addOperation({
           type: 'mergeTranslation',
           data: merged,
         });
+      } else {
+        console.error('[CacheManager] Permission denied - user may need to authenticate or have admin role');
       }
     }
 
@@ -248,43 +351,59 @@ export class CacheManager {
   }
 
   private mergeTranslations(existing: Translation, newTranslation: Translation): Translation {
-    const existingBook = existing.books.find(b => b.name === newTranslation.books[0]?.name);
-    
-    let updatedBooks;
-    
-    if (existingBook) {
-      const newBook = newTranslation.books[0];
-      const updatedChapters = [...existingBook.chapters];
+    // Merge all books from newTranslation into existing
+    const existingBooksMap = new Map<string, typeof existing.books[number]>();
+    existing.books.forEach(book => {
+      existingBooksMap.set(book.name, book);
+    });
+
+    // Process each book in newTranslation
+    newTranslation.books.forEach(newBook => {
+      const existingBook = existingBooksMap.get(newBook.name);
       
-      newBook.chapters.forEach(newChapter => {
-        const chapterIndex = updatedChapters.findIndex(c => c.number === newChapter.number);
-        if (chapterIndex >= 0) {
-          const existingChapter = updatedChapters[chapterIndex];
-          const updatedVerses = [...existingChapter.verses];
+      if (existingBook) {
+        // Merge chapters for this book
+        const chaptersMap = new Map<number, typeof existingBook.chapters[number]>();
+        existingBook.chapters.forEach(ch => {
+          chaptersMap.set(ch.number, ch);
+        });
+
+        // Process each chapter in newBook
+        newBook.chapters.forEach(newChapter => {
+          const existingChapter = chaptersMap.get(newChapter.number);
           
-          newChapter.verses.forEach(newVerse => {
-            const verseIndex = updatedVerses.findIndex(v => v.number === newVerse.number);
-            if (verseIndex >= 0) {
-              updatedVerses[verseIndex] = newVerse;
-            } else {
-              updatedVerses.push(newVerse);
-            }
-          });
-          
-          updatedVerses.sort((a, b) => a.number - b.number);
-          updatedChapters[chapterIndex] = { ...existingChapter, verses: updatedVerses };
-        } else {
-          updatedChapters.push(newChapter);
-        }
-      });
-      
-      updatedChapters.sort((a, b) => a.number - b.number);
-      updatedBooks = existing.books.map(b => 
-        b.name === existingBook.name ? { ...b, chapters: updatedChapters } : b
-      );
-    } else {
-      updatedBooks = [...existing.books, newTranslation.books[0]];
-    }
+          if (existingChapter) {
+            // Merge verses for this chapter
+            const versesMap = new Map<number, typeof existingChapter.verses[number]>();
+            existingChapter.verses.forEach(v => {
+              versesMap.set(v.number, v);
+            });
+
+            // Update or add verses from newChapter
+            newChapter.verses.forEach(newVerse => {
+              versesMap.set(newVerse.number, newVerse);
+            });
+
+            // Update the chapter with merged verses
+            const mergedVerses = Array.from(versesMap.values()).sort((a, b) => a.number - b.number);
+            chaptersMap.set(newChapter.number, { ...existingChapter, verses: mergedVerses });
+          } else {
+            // Add new chapter
+            chaptersMap.set(newChapter.number, newChapter);
+          }
+        });
+
+        // Update the book with merged chapters
+        const mergedChapters = Array.from(chaptersMap.values()).sort((a, b) => a.number - b.number);
+        existingBooksMap.set(newBook.name, { ...existingBook, chapters: mergedChapters });
+      } else {
+        // Add new book
+        existingBooksMap.set(newBook.name, newBook);
+      }
+    });
+
+    // Convert back to array
+    const updatedBooks = Array.from(existingBooksMap.values());
     
     return {
       ...existing,

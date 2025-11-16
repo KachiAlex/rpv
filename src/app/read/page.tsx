@@ -18,11 +18,14 @@ export default function ReadPage() {
   const [showNotes, setShowNotes] = useState(false);
   const [selectedVerses, setSelectedVerses] = useState<Set<number>>(new Set());
   const userService = new UserService();
+  
+  // Ensure translations is always an array
+  const safeTranslations = Array.isArray(translations) ? translations : [];
 
   useEffect(() => {
     // Try to load from Firestore, fallback to sample
-    loadTranslations().catch(() => {
-      loadSample();
+    loadTranslations().catch(async () => {
+      await loadSample();
     });
   }, []);
 
@@ -48,24 +51,24 @@ export default function ReadPage() {
     }
   };
 
-  const books = useMemo(() => current?.books ?? [], [current]);
+  const books = useMemo(() => (current?.books ?? []).filter(b => b && b.name && Array.isArray(b.chapters)), [current]);
   const chapters = useMemo(() => {
     const b = books.find(b => b.name === book);
-    return b ? b.chapters.map((c) => c.number) : [];
+    return (b && Array.isArray(b.chapters)) ? b.chapters.map((c) => c?.number).filter(n => typeof n === 'number') : [];
   }, [books, book]);
   const verses = useMemo(() => {
     const b = books.find(b => b.name === book);
-    const c = b?.chapters.find((c) => c.number === chapter);
-    return c ? c.verses.map((v) => v.number) : [];
+    const c = b?.chapters?.find((c) => c?.number === chapter);
+    return (c && Array.isArray(c.verses)) ? c.verses.map((v) => v?.number).filter(n => typeof n === 'number') : [];
   }, [books, book, chapter]);
 
   const displayedVerses = useMemo(() => {
     const b = books.find(b => b.name === book);
-    const c = b?.chapters.find((c) => c.number === chapter);
-    if (!c || c.verses.length === 0) return [];
+    const c = b?.chapters?.find((c) => c?.number === chapter);
+    if (!c || !Array.isArray(c.verses) || c.verses.length === 0) return [];
     
     // Show all verses in the chapter
-    return c.verses;
+    return c.verses.filter(v => v && typeof v.number === 'number' && v.text);
   }, [books, book, chapter]);
 
   // Calculate previous and next chapter numbers
@@ -109,7 +112,7 @@ export default function ReadPage() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-      <aside className="rounded-xl border bg-white p-4 h-fit sticky top-4">
+      <aside className="rounded-xl border-2 border-brand-200 dark:border-brand-800 bg-gradient-to-br from-brand-50 via-white to-accent-purple/5 dark:from-neutral-800 dark:via-neutral-800 dark:to-accent-purple/10 p-4 h-fit sticky top-4 shadow-lg">
         <div className="space-y-3">
           <div>
             <label className="block text-sm font-medium mb-2">Search</label>
@@ -118,7 +121,7 @@ export default function ReadPage() {
           
           <label className="block text-sm font-medium">Translation</label>
           <select className="w-full rounded-md border p-2" value={current?.id ?? ''} onChange={(e) => useBibleStore.getState().setCurrent(e.target.value)}>
-            {translations.map((t) => (
+            {safeTranslations.map((t) => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
@@ -152,19 +155,21 @@ export default function ReadPage() {
         </div>
       </aside>
 
-      <section className="rounded-xl border bg-white p-6">
+      <section className="rounded-xl border-2 border-brand-200 dark:border-brand-800 bg-gradient-to-br from-white via-brand-50/30 to-white dark:from-neutral-800 dark:via-neutral-800 dark:to-neutral-800 p-6 shadow-lg">
         <div className="flex items-center justify-between mb-4">
-          <div className="text-sm text-neutral-500">{current?.name} • {book || '—'} {chapter}</div>
+          <div className="text-sm font-medium bg-gradient-to-r from-brand-600 to-accent-purple bg-clip-text text-transparent">
+            {current?.name} • {book || '—'} {chapter}
+          </div>
           
           {book && (
             <div className="flex items-center gap-2">
               <button
                 onClick={goToPreviousChapter}
                 disabled={previousChapter === null}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                   previousChapter === null
-                    ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
-                    : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                    ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed dark:bg-neutral-700 dark:text-neutral-500'
+                    : 'bg-gradient-to-r from-accent-blue to-accent-teal text-white hover:from-accent-blue/90 hover:to-accent-teal/90 shadow-md hover:shadow-lg transform hover:-translate-y-0.5'
                 }`}
                 title={previousChapter ? `Go to Chapter ${previousChapter}` : 'No previous chapter'}
               >
@@ -175,10 +180,10 @@ export default function ReadPage() {
               <button
                 onClick={goToNextChapter}
                 disabled={nextChapter === null}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                   nextChapter === null
-                    ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
-                    : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                    ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed dark:bg-neutral-700 dark:text-neutral-500'
+                    : 'bg-gradient-to-r from-accent-purple to-accent-pink text-white hover:from-accent-purple/90 hover:to-accent-pink/90 shadow-md hover:shadow-lg transform hover:-translate-y-0.5'
                 }`}
                 title={nextChapter ? `Go to Chapter ${nextChapter}` : 'No next chapter'}
               >

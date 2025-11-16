@@ -25,9 +25,10 @@ export function SearchBar() {
   const results = useMemo(() => {
     if (!query.trim() || query.length < 1) return [];
     
-    let searchTranslations = translations;
+    const safeTranslations = Array.isArray(translations) ? translations : [];
+    let searchTranslations = safeTranslations;
     if (selectedTranslation !== 'all') {
-      searchTranslations = translations.filter(t => t.id === selectedTranslation);
+      searchTranslations = safeTranslations.filter(t => t && t.id === selectedTranslation);
     }
     
     let filteredResults = searchService.searchInTranslations(searchTranslations, query, { 
@@ -50,8 +51,15 @@ export function SearchBar() {
 
   const books = useMemo(() => {
     const allBooks = new Set<string>();
+    if (!Array.isArray(translations)) return [];
     translations.forEach(t => {
-      t.books.forEach(b => allBooks.add(b.name));
+      if (t && Array.isArray(t.books)) {
+        t.books.forEach(b => {
+          if (b && b.name) {
+            allBooks.add(b.name);
+          }
+        });
+      }
     });
     return Array.from(allBooks).sort();
   }, [translations]);
@@ -207,9 +215,9 @@ export function SearchBar() {
               className="w-full rounded-md border p-2 text-sm dark:bg-neutral-700 dark:border-neutral-600 dark:text-neutral-100"
             >
               <option value="all">All Translations</option>
-              {translations.map(t => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
+              {Array.isArray(translations) ? translations.map(t => (
+                t && t.id ? <option key={t.id} value={t.id}>{t.name || t.id}</option> : null
+              )).filter(Boolean) : null}
             </select>
           </div>
           <div>

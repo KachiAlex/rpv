@@ -79,7 +79,20 @@ export class TranslationService {
 
       // Update existing translation
       const updated = this.addVerseToTranslation(translation, book, chapter, verse, text);
-      await this.saveTranslation(updated);
+      // Persist only the affected chapter to cloud to avoid large writes
+      const updatedBook = updated.books.find(b => b.name === book);
+      const updatedChapter = updatedBook?.chapters.find(c => c.number === chapter);
+      if (updatedBook && updatedChapter) {
+        await this.cacheManager.saveTranslation({
+          id: updated.id,
+          name: updated.name,
+          books: [{ name: updatedBook.name, chapters: [updatedChapter] }],
+          createdAt: updated.createdAt,
+          updatedAt: new Date(),
+        } as any);
+      } else {
+        await this.saveTranslation(updated);
+      }
     } catch (error) {
       console.error('Error adding/updating verse:', error);
       throw error;

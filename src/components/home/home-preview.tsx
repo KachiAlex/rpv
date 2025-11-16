@@ -10,7 +10,7 @@ export function HomePreview() {
   const [verse, setVerse] = useState<number>(1);
 
   useEffect(() => {
-    loadTranslations().catch(() => loadSample());
+    loadTranslations().catch(async () => await loadSample());
   }, [loadTranslations, loadSample]);
 
   // Choose a sensible default reference when data is present

@@ -4,11 +4,19 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
+    "dev:port": "next dev -p %PORT%",
+    "dev:electron": "cross-env NODE_ENV=development NEXT_PORT=3001 electron .",
+    "dev:electron:wait": "cross-env NODE_ENV=development NEXT_PORT=3001 wait-on tcp:3001 && cross-env NODE_ENV=development NEXT_PORT=3001 electron .",
+    "dev:app": "concurrently -n NEXT,ELECTRON -c blue,magenta \"cross-env PORT=3001 npm run dev:port --silent\" \"npm run dev:electron:wait --silent\"",
     "build": "next build",
     "start": "next start -p 3000",
+    "dist:win": "electron-builder --win --publish never",
     "lint": "next lint",
     "postinstall": "node -e \"try{require('fs').mkdirSync('src') }catch(e){}\"",
-    "create-admin": "node scripts/create-admin.js"
+    "create-admin": "node scripts/create-admin.js",
+    "import:translations": "ts-node --transpile-only scripts/import-translations.ts",
+    "transform:kjv": "ts-node --transpile-only scripts/transform-kjv.ts",
+    "transform:asv": "ts-node --transpile-only scripts/transform-asv.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -36,6 +44,43 @@
     "firebase-admin": "^13.5.0",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.10",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
+    "wait-on": "^7.2.0"
+  }
+  ,
+  "main": "electron/main.js",
+  "build": {
+    "appId": "com.rpv.bible",
+    "productName": "RPV Bible",
+    "files": [
+      "electron/**/*",
+      ".next/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64", "ia32"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "ia32"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    }
   }
 }

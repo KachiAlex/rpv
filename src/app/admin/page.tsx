@@ -18,8 +18,8 @@ function AdminPageContent() {
   const [isParsing, setIsParsing] = useState(false);
   const [parseProgress, setParseProgress] = useState('');
 
-  const [translationId, setTranslationId] = useState('sample');
-  const [translationName, setTranslationName] = useState('Sample Translation');
+  const [translationId, setTranslationId] = useState('RPV');
+  const [translationName, setTranslationName] = useState('Redemption Project Version');
   const [book, setBook] = useState('John');
   const [chapter, setChapter] = useState(3);
   const [verse, setVerse] = useState(16);
@@ -44,10 +44,11 @@ function AdminPageContent() {
       const versesCount = translation.books[0]?.chapters.reduce((sum, ch) => sum + ch.verses.length, 0) || 0;
       
       // Merge with existing translation (updates existing, adds new)
+      setParseProgress('Saving to Firestore...');
       await mergeTranslation(translation);
       
       setParseProgress('Complete!');
-      alert(`Document uploaded and parsed.\n\nFound ${chaptersCount} chapter(s) with ${versesCount} verse(s).`);
+      alert(`Document uploaded and parsed successfully!\n\nFound ${chaptersCount} chapter(s) with ${versesCount} verse(s).\n\nTranslation saved to Firestore and will persist after refresh.`);
       setDocumentFile(null);
     } catch (error) {
       console.error('Document parsing error:', error);
