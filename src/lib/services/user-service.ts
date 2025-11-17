@@ -1,5 +1,5 @@
 import { getFirebase } from '../firebase';
-import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, deleteDoc, Timestamp } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 
 export interface UserPreferences {
@@ -16,7 +16,18 @@ export interface Bookmark {
   chapter: number;
   verse: number;
   note?: string;
+  folder?: string;
+  tags?: string[];
   createdAt: Date;
+  updatedAt?: Date;
+}
+
+export interface BookmarkFolder {
+  id: string;
+  name: string;
+  color?: string;
+  createdAt: Date;
+  updatedAt?: Date;
 }
 
 export interface ReadingHistory {
@@ -86,29 +97,53 @@ export class UserService {
   }
 
   // Bookmarks
-  async getBookmarks(userId: string): Promise<Bookmark[]> {
+  async getBookmarks(userId: string, folder?: string, tag?: string): Promise<Bookmark[]> {
     const db = this.getDb();
     const bookmarksRef = collection(db, 'users', userId, 'bookmarks');
-    const snapshot = await getDocs(bookmarksRef);
     
-    return snapshot.docs.map(doc => ({
+    let q = query(bookmarksRef);
+    if (folder) {
+      q = query(bookmarksRef, where('folder', '==', folder));
+    }
+    
+    const snapshot = await getDocs(q);
+    let bookmarks = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toDate() || new Date(),
+      updatedAt: doc.data().updatedAt?.toDate() || undefined,
     })) as Bookmark[];
+    
+    // Filter by tag if provided (client-side for array-contains)
+    if (tag) {
+      bookmarks = bookmarks.filter(b => b.tags && b.tags.includes(tag));
+    }
+    
+    return bookmarks;
   }
 
-  async addBookmark(userId: string, bookmark: Omit<Bookmark, 'id' | 'createdAt'>): Promise<string> {
+  async addBookmark(userId: string, bookmark: Omit<Bookmark, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
     const db = this.getDb();
     const bookmarksRef = collection(db, 'users', userId, 'bookmarks');
+    const now = new Date();
     const newBookmark = {
       ...bookmark,
-      createdAt: new Date(),
+      createdAt: Timestamp.fromDate(now),
+      updatedAt: Timestamp.fromDate(now),
     };
     
     const docRef = doc(bookmarksRef);
     await setDoc(docRef, newBookmark);
     return docRef.id;
+  }
+
+  async updateBookmark(userId: string, bookmarkId: string, updates: Partial<Omit<Bookmark, 'id' | 'createdAt'>>): Promise<void> {
+    const db = this.getDb();
+    const bookmarkRef = doc(db, 'users', userId, 'bookmarks', bookmarkId);
+    await updateDoc(bookmarkRef, {
+      ...updates,
+      updatedAt: Timestamp.fromDate(new Date()),
+    });
   }
 
   async removeBookmark(userId: string, bookmarkId: string): Promise<void> {
@@ -135,7 +170,73 @@ export class UserService {
       id: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toDate() || new Date(),
+      updatedAt: doc.data().updatedAt?.toDate() || undefined,
     } as Bookmark;
+  }
+
+  // Folders
+  async getFolders(userId: string): Promise<BookmarkFolder[]> {
+    const db = this.getDb();
+    const foldersRef = collection(db, 'users', userId, 'bookmarkFolders');
+    const snapshot = await getDocs(foldersRef);
+    
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate() || new Date(),
+      updatedAt: doc.data().updatedAt?.toDate() || undefined,
+    })) as BookmarkFolder[];
+  }
+
+  async createFolder(userId: string, name: string, color?: string): Promise<string> {
+    const db = this.getDb();
+    const foldersRef = collection(db, 'users', userId, 'bookmarkFolders');
+    const now = new Date();
+    const folder = {
+      name,
+      color: color || 'blue',
+      createdAt: Timestamp.fromDate(now),
+      updatedAt: Timestamp.fromDate(now),
+    };
+    
+    const docRef = doc(foldersRef);
+    await setDoc(docRef, folder);
+    return docRef.id;
+  }
+
+  async updateFolder(userId: string, folderId: string, updates: Partial<Omit<BookmarkFolder, 'id' | 'createdAt'>>): Promise<void> {
+    const db = this.getDb();
+    const folderRef = doc(db, 'users', userId, 'bookmarkFolders', folderId);
+    await updateDoc(folderRef, {
+      ...updates,
+      updatedAt: Timestamp.fromDate(new Date()),
+    });
+  }
+
+  async deleteFolder(userId: string, folderId: string): Promise<void> {
+    const db = this.getDb();
+    // First, move all bookmarks in this folder to no folder
+    const bookmarks = await this.getBookmarks(userId, folderId);
+    for (const bookmark of bookmarks) {
+      await this.updateBookmark(userId, bookmark.id, { folder: undefined });
+    }
+    
+    // Then delete the folder
+    await deleteDoc(doc(db, 'users', userId, 'bookmarkFolders', folderId));
+  }
+
+  // Get all unique tags from user's bookmarks
+  async getAllTags(userId: string): Promise<string[]> {
+    const bookmarks = await this.getBookmarks(userId);
+    const tagSet = new Set<string>();
+    
+    bookmarks.forEach(bookmark => {
+      if (bookmark.tags) {
+        bookmark.tags.forEach(tag => tagSet.add(tag));
+      }
+    });
+    
+    return Array.from(tagSet).sort();
   }
 
   // Reading History

@@ -84,6 +84,50 @@ service cloud.firestore {
         allow create: if isAuthenticated() && request.auth.uid == userId;
         allow update: if isAuthenticated() && request.auth.uid == userId;
       }
+
+      // Subcollection: highlights — user can manage their own
+      match /highlights/{highlightId} {
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        allow create: if isAuthenticated() && request.auth.uid == userId;
+        allow update: if isAuthenticated() && request.auth.uid == userId;
+        allow delete: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // Subcollection: readingPlanProgress — user can manage their own
+      match /readingPlanProgress/{progressId} {
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        allow create: if isAuthenticated() && request.auth.uid == userId;
+        allow update: if isAuthenticated() && request.auth.uid == userId;
+        allow delete: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // Subcollection: bookProgress — user can manage their own
+      match /bookProgress/{progressId} {
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        allow create: if isAuthenticated() && request.auth.uid == userId;
+        allow update: if isAuthenticated() && request.auth.uid == userId;
+        allow delete: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // Subcollection: bookmarkFolders — user can manage their own
+      match /bookmarkFolders/{folderId} {
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        allow create: if isAuthenticated() && request.auth.uid == userId;
+        allow update: if isAuthenticated() && request.auth.uid == userId;
+        allow delete: if isAuthenticated() && request.auth.uid == userId;
+      }
+    }
+
+    // Reading Plans collection - public read, admin write
+    match /readingPlans/{planId} {
+      allow read: if true; // Public reading plans
+      allow write: if isAdmin(); // Only admins can create/update plans
+    }
+
+    // Cross-References collection - public read, admin write
+    match /crossReferences/{refId} {
+      allow read: if true; // Public cross-references
+      allow write: if isAdmin(); // Only admins can create/update cross-references
     }
   }
 }

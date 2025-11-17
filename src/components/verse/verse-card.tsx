@@ -1,9 +1,13 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BookmarkButton } from '@/components/bookmark/bookmark-button';
+import { HighlightButton } from '@/components/highlight/highlight-button';
+import { CrossReferencePanel } from '@/components/cross-reference/cross-reference-panel';
 import { Copy, Check, FileText } from 'lucide-react';
 import { formatVerseForCopy, copyToClipboard, type VerseToCopy } from '@/lib/utils/copy-verse';
-import type { Verse } from '@/lib/types';
+import { useAuth } from '@/lib/hooks/use-auth';
+import { HighlightService } from '@/lib/services/highlight-service';
+import type { Verse, Highlight } from '@/lib/types';
 
 interface VerseCardProps {
   verse: Verse;
@@ -26,7 +30,27 @@ export function VerseCard({
   isAuthenticated,
   onNoteClick,
 }: VerseCardProps) {
+  const { user } = useAuth();
   const [copied, setCopied] = useState(false);
+  const [highlight, setHighlight] = useState<Highlight | null>(null);
+  const highlightService = new HighlightService();
+
+  useEffect(() => {
+    if (isAuthenticated && user && translationId) {
+      loadHighlight();
+    }
+  }, [isAuthenticated, user, translationId, book, chapter, verse.number]);
+
+  const loadHighlight = async () => {
+    if (!user || !translationId) return;
+    
+    try {
+      const existing = await highlightService.getHighlight(user.uid, translationId, book, chapter, verse.number);
+      setHighlight(existing);
+    } catch (error) {
+      console.error('Error loading highlight:', error);
+    }
+  };
 
   const handleCopy = async () => {
     const verseToCopy: VerseToCopy = {
@@ -53,12 +77,29 @@ export function VerseCard({
     }
   };
 
+  const getHighlightStyles = () => {
+    if (!highlight) return '';
+    
+    const colorMap: Record<string, string> = {
+      yellow: 'bg-yellow-100 dark:bg-yellow-900/20 border-yellow-300 dark:border-yellow-700',
+      blue: 'bg-blue-100 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700',
+      green: 'bg-green-100 dark:bg-green-900/20 border-green-300 dark:border-green-700',
+      pink: 'bg-pink-100 dark:bg-pink-900/20 border-pink-300 dark:border-pink-700',
+      purple: 'bg-purple-100 dark:bg-purple-900/20 border-purple-300 dark:border-purple-700',
+      orange: 'bg-orange-100 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700',
+    };
+    
+    return colorMap[highlight.color] || '';
+  };
+
   return (
     <div
       id={`verse-${verse.number}`}
       className={`p-4 rounded-lg transition-colors ${
         isSelected
           ? 'bg-brand-50 dark:bg-brand-900/20 border-2 border-brand-300 dark:border-brand-600'
+          : highlight
+          ? `${getHighlightStyles()} border-2`
           : 'bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
       }`}
     >
@@ -82,14 +123,25 @@ export function VerseCard({
             )}
           </button>
           {translationId && (
-            <div onClick={(e) => e.stopPropagation()}>
-              <BookmarkButton
-                translationId={translationId}
-                book={book}
-                chapter={chapter}
-                verse={verse.number}
-              />
-            </div>
+            <>
+              <div onClick={(e) => e.stopPropagation()}>
+                <HighlightButton
+                  translationId={translationId}
+                  book={book}
+                  chapter={chapter}
+                  verse={verse.number}
+                  onHighlightChange={setHighlight}
+                />
+              </div>
+              <div onClick={(e) => e.stopPropagation()}>
+                <BookmarkButton
+                  translationId={translationId}
+                  book={book}
+                  chapter={chapter}
+                  verse={verse.number}
+                />
+              </div>
+            </>
           )}
           {isAuthenticated && onNoteClick && (
             <button
@@ -108,6 +160,15 @@ export function VerseCard({
       <div className="text-lg leading-relaxed text-neutral-900 dark:text-neutral-100">
         {verse.text}
       </div>
+      
+      {translationId && (
+        <CrossReferencePanel
+          translationId={translationId}
+          book={book}
+          chapter={chapter}
+          verse={verse.number}
+        />
+      )}
     </div>
   );
 }

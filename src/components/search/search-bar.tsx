@@ -7,7 +7,11 @@ import type { SearchResult } from '@/lib/services/search-service';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-export function SearchBar() {
+interface SearchBarProps {
+  inputRef?: React.RefObject<HTMLInputElement>;
+}
+
+export function SearchBar({ inputRef: externalInputRef }: SearchBarProps = {} as SearchBarProps) {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -18,7 +22,8 @@ export function SearchBar() {
   const { translations, current } = useBibleStore();
   const searchService = useMemo(() => new SearchService(), []);
   const router = useRouter();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const internalInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = externalInputRef || internalInputRef;
   const resultsRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -157,6 +162,7 @@ export function SearchBar() {
             setSelectedIndex(-1);
           }}
           onFocus={() => setIsOpen(true)}
+          data-search-input="true"
           onBlur={(e) => {
             // Delay closing to allow click events to fire
             // The click-outside handler will handle closing

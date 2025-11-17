@@ -1,7 +1,7 @@
 "use client";
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BookOpenText, Monitor, Upload, LogIn, LogOut, User } from 'lucide-react';
+import { BookOpenText, Monitor, Upload, LogIn, LogOut, User, Calendar } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { useEffect, useState } from 'react';
@@ -73,6 +73,17 @@ export function Navbar() {
           >
             <Monitor size={16}/>Projector
           </Link>
+          {isAuthenticated && (
+            <Link 
+              className={clsx(
+                'hover:text-brand-700 inline-flex items-center gap-2 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 rounded px-2 py-1',
+                isActive('/plans') && 'text-brand-700 font-medium'
+              )} 
+              href="/plans"
+            >
+              <Calendar size={16}/>Plans
+            </Link>
+          )}
           {isAuthenticated && isAdmin && (
             <Link
               href="/admin"
@@ -108,6 +119,14 @@ export function Navbar() {
                   >
                     <User size={16} />
                     Account
+                  </Link>
+                  <Link
+                    href="/plans"
+                    onClick={() => setShowMenu(false)}
+                    className="block w-full text-left px-4 py-2 hover:bg-neutral-50 flex items-center gap-2 text-sm"
+                  >
+                    <Calendar size={16} />
+                    Reading Plans
                   </Link>
                   <button
                     onClick={handleLogout}
