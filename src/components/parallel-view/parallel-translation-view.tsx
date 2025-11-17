@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { VerseCard } from '@/components/verse/verse-card';
 import { useAuth } from '@/lib/hooks/use-auth';
-import { X, Minus2, Maximize2, RotateCcw } from 'lucide-react';
+import { X } from 'lucide-react';
 import type { Translation, Verse } from '@/lib/types';
 
 interface ParallelTranslationViewProps {

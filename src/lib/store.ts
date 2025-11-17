@@ -184,7 +184,7 @@ export const useBibleStore = create<BibleState>((set, get) => {
         try {
           const { db } = await import('./firebase').then(m => m.getFirebase());
           if (db) {
-            const unsubscribe = translationService.subscribeToAllTranslations((incoming) => {
+            const unsubscribe = translationService.subscribeToAllTranslations(async (incoming) => {
               const state = get();
               const existing = Array.isArray(state.translations) ? state.translations : [];
               const incomingArray = Array.isArray(incoming) ? incoming : [];
