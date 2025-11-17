@@ -108,14 +108,6 @@ export function PlanDetailClient({ planId }: PlanDetailClientProps) {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <Link
-        href="/plans"
-        className="inline-flex items-center gap-2 text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 mb-6"
-      >
-        <ArrowLeft size={16} />
-        Back to Reading Plans
-      </Link>
-
       <div className="rounded-xl border-2 border-brand-200 dark:border-brand-800 bg-white dark:bg-neutral-800 p-6 mb-6 shadow-lg">
         <h1 className="text-3xl font-bold text-brand-700 dark:text-brand-300 mb-2">
           {plan.name}

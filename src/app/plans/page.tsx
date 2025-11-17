@@ -4,15 +4,18 @@ import { ProtectedRoute } from '@/components/auth/protected-route';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { ReadingPlanService } from '@/lib/services/reading-plan-service';
 import { useBibleStore } from '@/lib/store';
-import { BookOpen, CheckCircle, Circle, Calendar, Target, TrendingUp } from 'lucide-react';
+import { BookOpen, CheckCircle, Circle, Calendar, Target, TrendingUp, ArrowLeft, X } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { PlanDetailClient } from './plan-detail-client';
 import type { ReadingPlan, UserReadingPlanProgress } from '@/lib/types';
 
 function ReadingPlansContent() {
   const { user, isAuthenticated } = useAuth();
   const { translations, current, setCurrent } = useBibleStore();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const planId = searchParams.get('planId');
   const [plans, setPlans] = useState<ReadingPlan[]>([]);
   const [userProgress, setUserProgress] = useState<UserReadingPlanProgress[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,6 +99,22 @@ function ReadingPlansContent() {
     const progress = getProgressForPlan(plan.id);
     return progress && !progress.completed;
   });
+
+  // Show plan detail if planId is in query params
+  if (planId) {
+    return (
+      <div className="max-w-6xl mx-auto">
+        <button
+          onClick={() => router.push('/plans')}
+          className="inline-flex items-center gap-2 text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 mb-6"
+        >
+          <ArrowLeft size={16} />
+          Back to Reading Plans
+        </button>
+        <PlanDetailClient planId={planId} />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -192,7 +211,7 @@ function ReadingPlansContent() {
                   <div className="flex gap-2">
                     {isStarted ? (
                       <Link
-                        href={`/plans/${plan.id}`}
+                        href={`/plans?planId=${plan.id}`}
                         className="flex-1 text-center bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition-colors"
                       >
                         Continue Plan
@@ -311,7 +330,7 @@ function ReadingPlansContent() {
 
                   <div className="flex gap-2">
                     <Link
-                      href={`/plans/${plan.id}`}
+                      href={`/plans?planId=${plan.id}`}
                       className="flex-1 text-center bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition-colors"
                     >
                       View Full Plan
