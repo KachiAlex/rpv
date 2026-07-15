@@ -1,0 +1,110 @@
+{
+  "name": "rpv-bible",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "dev:port": "next dev -p %PORT%",
+    "dev:electron": "cross-env NODE_ENV=development NEXT_PORT=3001 electron .",
+    "dev:electron:wait": "cross-env NODE_ENV=development NEXT_PORT=3001 wait-on tcp:3001 && cross-env NODE_ENV=development NEXT_PORT=3001 electron .",
+    "dev:app": "concurrently -n NEXT,ELECTRON -c blue,magenta \"cross-env PORT=3001 npm run dev:port --silent\" \"npm run dev:electron:wait --silent\"",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "dist:win": "electron-builder --win --publish never",
+    "lint": "next lint",
+    "postinstall": "node -e \"try{require('fs').mkdirSync('src') }catch(e){}\"",
+    "create-admin": "node scripts/create-admin.js",
+    "import:translations": "ts-node --transpile-only scripts/import-translations.ts",
+    "transform:kjv": "ts-node --transpile-only scripts/transform-kjv.ts",
+    "transform:asv": "ts-node --transpile-only scripts/transform-asv.ts"
+  },
+  "dependencies": {
+    "@tinymce/tinymce-react": "^6.3.0",
+    "clsx": "^2.1.1",
+    "docx": "^9.5.1",
+    "firebase": "^10.14.1",
+    "framer-motion": "^12.23.26",
+    "idb": "^8.0.3",
+    "lucide-react": "^0.468.0",
+    "mammoth": "^1.11.0",
+    "next": "^14.2.5",
+    "next-pwa": "^5.6.0",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^5.4.394",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tinymce": "^8.3.1",
+    "workbox-window": "^7.3.0",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.5",
+    "@babel/preset-env": "^7.28.5",
+    "@babel/preset-typescript": "^7.28.5",
+    "@fast-check/jest": "^2.1.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.1",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.11.30",
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "autoprefixer": "^10.4.18",
+    "babel-jest": "^30.2.0",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^14.2.5",
+    "fast-check": "^4.5.2",
+    "firebase-admin": "^13.5.0",
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.10",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.6.2",
+    "wait-on": "^7.2.0"
+  },
+  "main": "electron/main.js",
+  "build": {
+    "appId": "com.rpv.bible",
+    "productName": "RPV Bible",
+    "files": [
+      "electron/**/*",
+      ".next/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    }
+  }
+}

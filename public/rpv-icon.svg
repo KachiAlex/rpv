@@ -1,0 +1,20 @@
+<svg width="192" height="192" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Navy blue background -->
+  <rect width="192" height="192" fill="#2B3A67" rx="24"/>
+  
+  <!-- Simplified open book -->
+  <path d="M48 60 L48 132 Q48 138 54 138 L90 138 Q96 135 96 129 L96 66 Q96 60 90 60 L54 60 Q48 60 48 60 Z" 
+        stroke="white" stroke-width="3" fill="none"/>
+  <path d="M144 60 L144 132 Q144 138 138 138 L102 138 Q96 135 96 129 L96 66 Q96 60 102 60 L138 60 Q144 60 144 60 Z" 
+        stroke="white" stroke-width="3" fill="none"/>
+  
+  <!-- Book spine -->
+  <line x1="96" y1="60" x2="96" y2="138" stroke="white" stroke-width="2"/>
+  
+  <!-- Cross above book -->
+  <line x1="96" y1="30" x2="96" y2="55" stroke="white" stroke-width="4"/>
+  <line x1="84" y1="37" x2="108" y2="37" stroke="white" stroke-width="4"/>
+  
+  <!-- RPV Text -->
+  <text x="96" y="110" font-family="serif" font-size="32" font-weight="bold" fill="white" text-anchor="middle">RPV</text>
+</svg>

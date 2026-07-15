@@ -1,0 +1,357 @@
+/**
+ * Frontend Integration Example for RPV Bible Conversational AI
+ * This shows how to integrate the enhanced API with conversational features
+ */
+
+import React, { useState, useEffect } from 'react';
+
+// Types matching the API responses
+interface BibleVerse {
+  book: string;
+  chapter: number;
+  verse: number;
+  text: string;
+  relevance_score?: number;
+}
+
+interface ClarificationOption {
+  id: string;
+  text: string;
+  topic?: string;
+  subtopic?: string;
+}
+
+interface ClarificationQuestion {
+  question: string;
+  options: ClarificationOption[];
+  type: string;
+  emotional_context?: string;
+}
+
+interface SearchResponse {
+  query: string;
+  results: BibleVerse[];
+  total_results: number;
+  processing_time_ms: number;
+  clarification?: ClarificationQuestion;
+  suggestions?: string[];
+  session_id: string;
+}
+
+export function ConversationalBibleSearch() {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<BibleVerse[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [sessionId, setSessionId] = useState<string>('');
+  const [clarification, setClarification] = useState<ClarificationQuestion | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [originalQuery, setOriginalQuery] = useState('');
+
+  // Generate session ID on component mount
+  useEffect(() => {
+    setSessionId(crypto.randomUUID());
+  }, []);
+
+  const handleSearch = async (searchQuery: string = query) => {
+    if (!searchQuery.trim()) return;
+    
+    setLoading(true);
+    setClarification(null);
+    
+    try {
+      const response = await fetch(`/api/bible-search?q=${encodeURIComponent(searchQuery)}`, {
+        headers: {
+          'X-Session-ID': sessionId
+        }
+      });
+      
+      const data: SearchResponse = await response.json();
+      
+      // Update session ID if provided by server
+      if (data.session_id) {
+        setSessionId(data.session_id);
+      }
+      
+      setResults(data.results || []);
+      setSuggestions(data.suggestions || []);
+      
+      // Handle clarification request
+      if (data.clarification) {
+        setClarification(data.clarification);
+        setOriginalQuery(searchQuery);
+      }
+      
+    } catch (error) {
+      console.error('Search error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClarification = async (optionId: string, optionText: string) => {
+    setLoading(true);
+    
+    try {
+      const response = await fetch('/api/bible-search/clarify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          original_query: originalQuery,
+          selected_option_id: optionId,
+          additional_context: optionText
+        })
+      });
+      
+      const data: SearchResponse = await response.json();
+      setResults(data.results || []);
+      setClarification(null);
+      
+    } catch (error) {
+      console.error('Clarification error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFeedback = async (feedback: 'helpful' | 'not_helpful' | 'partially_helpful') => {
+    try {
+      await fetch('/api/bible-search/feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          query: query,
+          feedback: feedback
+        })
+      });
+    } catch (error) {
+      console.error('Feedback error:', error);
+    }
+  };
+
+  const handleSuggestionClick = (suggestion: string) => {
+    setQuery(suggestion);
+    handleSearch(suggestion);
+  };
+
+  return (
+    <div className="conversational-bible-search max-w-4xl mx-auto p-6">
+      <div className="search-section mb-6">
+        <h2 className="text-2xl font-bold mb-4">Ask the Bible Anything</h2>
+        
+        {/* Search Input */}
+        <div className="flex gap-2 mb-4">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Ask about any topic... (e.g., 'How to find peace in difficult times?')"
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+          />
+          <button
+            onClick={() => handleSearch()}
+            disabled={loading}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {loading ? 'Searching...' : 'Search'}
+          </button>
+        </div>
+
+        {/* Suggestions */}
+        {suggestions.length > 0 && (
+          <div className="suggestions mb-4">
+            <p className="text-sm text-gray-600 mb-2">💡 Based on your previous searches:</p>
+            <div className="flex flex-wrap gap-2">
+              {suggestions.map((suggestion, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleSuggestionClick(suggestion)}
+                  className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm hover:bg-gray-200"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Clarification Section */}
+      {clarification && (
+        <div className="clarification-section mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <h3 className="font-semibold text-blue-800 mb-3">
+            🤔 {clarification.question}
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {clarification.options.map((option) => (
+              <button
+                key={option.id}
+                onClick={() => handleClarification(option.id, option.text)}
+                className="p-3 text-left bg-white border border-blue-300 rounded-lg hover:bg-blue-100 transition-colors"
+              >
+                {option.text}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-blue-600 mt-2">
+            This helps me find more relevant verses for you!
+          </p>
+        </div>
+      )}
+
+      {/* Results Section */}
+      {results.length > 0 && (
+        <div className="results-section">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-semibold">
+              📖 Found {results.length} relevant verses
+            </h3>
+            
+            {/* Feedback Buttons */}
+            <div className="feedback-buttons flex gap-2">
+              <button
+                onClick={() => handleFeedback('helpful')}
+                className="px-3 py-1 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200"
+              >
+                👍 Helpful
+              </button>
+              <button
+                onClick={() => handleFeedback('partially_helpful')}
+                className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded text-sm hover:bg-yellow-200"
+              >
+                🤔 Partially
+              </button>
+              <button
+                onClick={() => handleFeedback('not_helpful')}
+                className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200"
+              >
+                👎 Not helpful
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {results.map((verse, index) => (
+              <div key={index} className="verse-card p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+                <div className="verse-reference text-sm font-semibold text-blue-600 mb-2">
+                  {verse.book} {verse.chapter}:{verse.verse}
+                  {verse.relevance_score && (
+                    <span className="ml-2 text-gray-500">
+                      ({(verse.relevance_score * 100).toFixed(0)}% match)
+                    </span>
+                  )}
+                </div>
+                <div className="verse-text text-gray-800 leading-relaxed">
+                  "{verse.text}"
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* No Results */}
+      {!loading && results.length === 0 && query && !clarification && (
+        <div className="no-results text-center py-8 text-gray-500">
+          <p>No verses found for "{query}". Try rephrasing your question or use different keywords.</p>
+        </div>
+      )}
+
+      {/* Help Text */}
+      <div className="help-section mt-8 p-4 bg-gray-50 rounded-lg">
+        <h4 className="font-semibold mb-2">💬 How to get better results:</h4>
+        <ul className="text-sm text-gray-600 space-y-1">
+          <li>• Ask natural questions: "How can I find peace?"</li>
+          <li>• Describe your situation: "I'm struggling with anxiety"</li>
+          <li>• Use topic words: "forgiveness", "love", "hope"</li>
+          <li>• The AI learns from your searches to give better suggestions</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// API Route Example for Next.js
+// File: src/app/api/bible-search/route.ts
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const query = searchParams.get('q');
+  const sessionId = request.headers.get('X-Session-ID');
+
+  if (!query) {
+    return Response.json({ error: 'Query parameter required' }, { status: 400 });
+  }
+
+  try {
+    const response = await fetch(
+      `${process.env.BIBLE_API_URL}/search?q=${encodeURIComponent(query)}`,
+      {
+        headers: {
+          'X-Session-ID': sessionId || ''
+        }
+      }
+    );
+    
+    const data = await response.json();
+    return Response.json(data);
+  } catch (error) {
+    return Response.json(
+      { error: 'Failed to search Bible verses' }, 
+      { status: 500 }
+    );
+  }
+}
+
+// Clarification endpoint
+// File: src/app/api/bible-search/clarify/route.ts
+export async function POST(request: Request) {
+  const body = await request.json();
+
+  try {
+    const response = await fetch(`${process.env.BIBLE_API_URL}/clarify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body)
+    });
+    
+    const data = await response.json();
+    return Response.json(data);
+  } catch (error) {
+    return Response.json(
+      { error: 'Failed to process clarification' }, 
+      { status: 500 }
+    );
+  }
+}
+
+// Feedback endpoint
+// File: src/app/api/bible-search/feedback/route.ts
+export async function POST(request: Request) {
+  const body = await request.json();
+
+  try {
+    const response = await fetch(`${process.env.BIBLE_API_URL}/feedback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body)
+    });
+    
+    const data = await response.json();
+    return Response.json(data);
+  } catch (error) {
+    return Response.json(
+      { error: 'Failed to submit feedback' }, 
+      { status: 500 }
+    );
+  }
+}
