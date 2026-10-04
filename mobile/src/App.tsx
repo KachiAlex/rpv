@@ -2,12 +2,24 @@ import 'react-native-gesture-handler';
 import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer } from '@react-navigation/native';
-import { PaperProvider } from 'react-native-paper';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import RootNavigator from './navigation/RootNavigator';
 import { initializeDatabase } from './services/database';
 import { initializeApi } from './services/api';
 import { useAuthStore } from './store/authStore';
+import { colors } from './theme';
+
+const navTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    background: colors.cream,
+    card: colors.navy900,
+    text: colors.ink,
+    primary: colors.red600,
+    border: colors.border,
+  },
+};
 
 export default function App(): React.ReactElement {
   const initializeAuth = useAuthStore((state) => state.initializeAuth);
@@ -15,30 +27,22 @@ export default function App(): React.ReactElement {
   useEffect(() => {
     const initialize = async (): Promise<void> => {
       try {
-        // Initialize database
         await initializeDatabase();
-
-        // Restore API session (token + user)
         await initializeApi();
-
-        // Initialize auth state
         initializeAuth();
       } catch (error) {
         console.error('Initialization error:', error);
       }
     };
-
     initialize();
   }, [initializeAuth]);
 
   return (
     <SafeAreaProvider>
-      <PaperProvider>
-        <NavigationContainer>
-          <RootNavigator />
-        </NavigationContainer>
-        <StatusBar style="auto" />
-      </PaperProvider>
+      <NavigationContainer theme={navTheme}>
+        <RootNavigator />
+      </NavigationContainer>
+      <StatusBar style="light" />
     </SafeAreaProvider>
   );
 }

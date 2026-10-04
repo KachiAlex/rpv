@@ -1,238 +1,327 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
-import { Text, Button, Menu, Divider, ActivityIndicator, Chip } from 'react-native-paper';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import searchService, { SearchResult } from '../services/searchService';
-import translationService from '../services/translationService';
-import offlineQueueService from '../services/offlineQueueService';
+import { useRoute } from '@react-navigation/native';
+import { colors, radius, spacing } from '../theme';
+import { RpvCard, Eyebrow, Loading, Empty, textStyles } from '../components/Rpv';
+import {
+  getTranslations,
+  getBook,
+  getSelectedTranslation,
+  setSelectedTranslation,
+  setLastRead,
+  getLastRead,
+  RpvTranslation,
+  RpvBook,
+} from '../services/bible';
+import { useAuthStore } from '../store/authStore';
+import { useBookmarkStore } from '../store/bookmarkStore';
 
-interface VerseWithMeta extends SearchResult {
-  isBookmarked?: boolean;
-}
-
-const BOOKS = [
-  'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
-  'Joshua', 'Judges', 'Ruth', '1 Samuel', '2 Samuel',
-  'Matthew', 'Mark', 'Luke', 'John', 'Acts',
-];
+type Mode = 'books' | 'chapters' | 'verses';
 
 export default function ReadScreen(): React.ReactElement {
-  const [selectedBook, setSelectedBook] = useState<string>('John');
-  const [selectedChapter, setSelectedChapter] = useState<number>(1);
-  const [verses, setVerses] = useState<VerseWithMeta[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedTranslation, setSelectedTranslation] = useState<string>('KJV');
-  const [menuVisible, setMenuVisible] = useState(false);
-  const [fontSize, setFontSize] = useState(16);
-  const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
+  const route = useRoute<any>();
+  const { user } = useAuthStore();
+  const { bookmarks, addBookmark, loadBookmarks } = useBookmarkStore();
+
+  const [translations, setTranslations] = useState<RpvTranslation[]>([]);
+  const [translationId, setTranslationId] = useState('RPV');
+  const [book, setBook] = useState<RpvBook | null>(null);
+  const [bookName, setBookName] = useState<string | null>(null);
+  const [chapter, setChapter] = useState<number | null>(null);
+  const [fontSize, setFontSize] = useState(17);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const mode: Mode = chapter !== null ? 'verses' : bookName ? 'chapters' : 'books';
+
+  const translation = useMemo(
+    () => translations.find((t) => t.id === translationId),
+    [translations, translationId]
+  );
 
   useEffect(() => {
-    loadSelectedTranslation();
-    loadChapter();
+    (async () => {
+      try {
+        const list = await getTranslations();
+        setTranslations(list);
+        const saved = await getSelectedTranslation();
+        const id = list.some((t) => t.id === saved) ? saved : list[0]?.id || 'RPV';
+        setTranslationId(id);
+
+        const params = route.params;
+        const lastRead = await getLastRead();
+        const initialBook = params?.book || lastRead?.book || list.find((t) => t.id === id)?.books[0]?.name;
+        const initialChapter = params?.chapter ?? lastRead?.chapter ?? null;
+        if (initialBook) {
+          setBookName(initialBook);
+          if (initialChapter) setChapter(initialChapter);
+        }
+      } catch (e: any) {
+        setError(e.message);
+      }
+    })();
   }, []);
 
-  const loadSelectedTranslation = async (): Promise<void> => {
-    try {
-      const translation = await translationService.getSelectedTranslation();
-      setSelectedTranslation(translation);
-    } catch (error) {
-      console.error('Error loading translation:', error);
-    }
-  };
+  useEffect(() => {
+    if (user) loadBookmarks(user.uid);
+  }, [user]);
 
-  const loadChapter = useCallback(async (): Promise<void> => {
-    try {
-      setLoading(true);
-      const chapterVerses = await searchService.getChapter(
-        selectedBook,
-        selectedChapter,
-        selectedTranslation
-      );
-      setVerses(chapterVerses);
-    } catch (error) {
-      console.error('Error loading chapter:', error);
-      Alert.alert('Error', 'Failed to load chapter');
-    } finally {
+  // Load book content when book/translation changes
+  useEffect(() => {
+    if (!bookName) {
       setLoading(false);
+      return;
     }
-  }, [selectedBook, selectedChapter, selectedTranslation]);
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const b = await getBook(translationId, bookName);
+        if (!cancelled) setBook(b);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [translationId, bookName]);
 
   useEffect(() => {
-    loadChapter();
-  }, [loadChapter]);
-
-  const handlePreviousChapter = (): void => {
-    if (selectedChapter > 1) {
-      setSelectedChapter(selectedChapter - 1);
+    if (bookName && chapter) {
+      setLastRead({ translationId, book: bookName, chapter });
     }
-  };
+  }, [translationId, bookName, chapter]);
 
-  const handleNextChapter = (): void => {
-    setSelectedChapter(selectedChapter + 1);
-  };
+  const chapterData = useMemo(
+    () => book?.chapters.find((c) => c.number === chapter) || null,
+    [book, chapter]
+  );
 
-  const handleChangeTranslation = async (translation: string): Promise<void> => {
-    try {
-      await translationService.setSelectedTranslation(translation);
-      setSelectedTranslation(translation);
-      setMenuVisible(false);
-    } catch (error) {
-      console.error('Error changing translation:', error);
-      Alert.alert('Error', 'Failed to change translation');
-    }
-  };
+  const bookmarkedKeys = useMemo(
+    () => new Set(bookmarks.map((b) => `${b.book}-${b.chapter}-${b.verse}`)),
+    [bookmarks]
+  );
 
-  const handleBookmark = async (verse: SearchResult): Promise<void> => {
-    try {
-      const verseId = `${verse.book}-${verse.chapter}-${verse.verse}`;
-      const isBookmarked = bookmarks.has(verseId);
+  const changeTranslation = useCallback(async (id: string) => {
+    setTranslationId(id);
+    await setSelectedTranslation(id);
+    setBook(null);
+    setBookName(null);
+    setChapter(null);
+  }, []);
 
-      if (isBookmarked) {
-        bookmarks.delete(verseId);
-        setBookmarks(new Set(bookmarks));
-      } else {
-        bookmarks.add(verseId);
-        setBookmarks(new Set(bookmarks));
-        // Queue bookmark for sync
-        await offlineQueueService.queueBookmarkAdd(verse.id, 'current-user');
+  const selectBook = useCallback((name: string) => {
+    setBookName(name);
+    setChapter(null);
+    setBook(null);
+  }, []);
+
+  const handleBookmark = useCallback(
+    async (verse: { number: number; text: string }) => {
+      if (!user) {
+        Alert.alert('Sign in required', 'Sign in to save and sync bookmarks.');
+        return;
       }
-    } catch (error) {
-      console.error('Error bookmarking verse:', error);
-      Alert.alert('Error', 'Failed to bookmark verse');
-    }
-  };
+      if (!bookName || !chapter) return;
+      try {
+        await addBookmark(user.uid, {
+          id: `${translationId}-${bookName}-${chapter}-${verse.number}`,
+          book: bookName,
+          chapter,
+          verse: verse.number,
+          text: verse.text,
+          translation: translationId,
+        } as any);
+      } catch (e: any) {
+        Alert.alert('Bookmark failed', e.message);
+      }
+    },
+    [user, bookName, chapter, translationId, addBookmark]
+  );
 
-  const handleCopyVerse = async (verse: SearchResult): Promise<void> => {
-    try {
-      const text = `${verse.book} ${verse.chapter}:${verse.verse} (${verse.translation})\n\n${verse.text}`;
-      // In a real app, use react-native-clipboard
-      Alert.alert('Copied', 'Verse copied to clipboard');
-    } catch (error) {
-      console.error('Error copying verse:', error);
-    }
-  };
+  const prevChapter = useCallback(() => {
+    if (chapter && chapter > 1) setChapter(chapter - 1);
+  }, [chapter]);
 
-  const renderVerseItem = ({ item }: { item: VerseWithMeta }): React.ReactElement => {
-    const verseId = `${item.book}-${item.chapter}-${item.verse}`;
-    const isBookmarked = bookmarks.has(verseId);
+  const nextChapter = useCallback(() => {
+    if (book && chapter && chapter < book.chapters.length) setChapter(chapter + 1);
+  }, [book, chapter]);
 
-    return (
-      <View style={styles.verseContainer}>
-        <View style={styles.verseHeader}>
-          <Text style={[styles.verseNumber, { fontSize: fontSize - 2 }]}>
-            {item.verse}
+  // ---------- Render ----------
+
+  const renderTranslationRow = () => (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.transRow}>
+      {translations.map((t) => (
+        <TouchableOpacity
+          key={t.id}
+          onPress={() => changeTranslation(t.id)}
+          style={[styles.transChip, t.id === translationId && styles.transChipActive]}
+        >
+          <Text style={[styles.transChipText, t.id === translationId && styles.transChipTextActive]}>
+            {t.id}
           </Text>
+        </TouchableOpacity>
+      ))}
+    </ScrollView>
+  );
+
+  const renderBooks = () => (
+    <ScrollView style={styles.flex}>
+      <View style={styles.pad}>
+        <Eyebrow>Read the Bible</Eyebrow>
+        <Text style={styles.pageTitle}>Choose a book</Text>
+        <Text style={textStyles.body}>
+          {translation ? `${translation.name} — ${translation.books.length} books` : ''}
+        </Text>
+        <View style={styles.bookGrid}>
+          {translation?.books.map((b) => (
+            <TouchableOpacity
+              key={b.name}
+              style={styles.bookTile}
+              onPress={() => selectBook(b.name)}
+            >
+              <Text style={styles.bookTileText}>{b.name}</Text>
+              <Text style={styles.bookTileMeta}>{b.chapterCount} ch.</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    </ScrollView>
+  );
+
+  const renderChapters = () => (
+    <ScrollView style={styles.flex}>
+      <View style={styles.pad}>
+        <TouchableOpacity onPress={() => { setBookName(null); setBook(null); }} style={styles.backRow}>
+          <MaterialCommunityIcons name="chevron-left" size={20} color={colors.red600} />
+          <Text style={styles.backText}>All books</Text>
+        </TouchableOpacity>
+        <Text style={styles.pageTitle}>{bookName}</Text>
+        {book?.introduction ? (
+          <RpvCard>
+            <Eyebrow>Introduction</Eyebrow>
+            <Text style={textStyles.body}>{book.introduction}</Text>
+          </RpvCard>
+        ) : null}
+        <View style={styles.chapterGrid}>
+          {book?.chapters.map((c) => (
+            <TouchableOpacity
+              key={c.number}
+              style={styles.chapterTile}
+              onPress={() => setChapter(c.number)}
+            >
+              <Text style={styles.chapterTileText}>{c.number}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    </ScrollView>
+  );
+
+  const renderVerses = () => (
+    <View style={styles.flex}>
+      {/* Sticky chapter bar */}
+      <View style={styles.chapterBar}>
+        <TouchableOpacity onPress={() => setChapter(null)} style={styles.backRow}>
+          <MaterialCommunityIcons name="chevron-left" size={20} color={colors.red600} />
+          <Text style={styles.backText}>{bookName}</Text>
+        </TouchableOpacity>
+        <View style={styles.chapterNav}>
           <TouchableOpacity
-            onPress={() => handleBookmark(item)}
-            style={styles.bookmarkButton}
+            onPress={prevChapter}
+            disabled={!chapter || chapter <= 1}
+            style={styles.navArrow}
           >
             <MaterialCommunityIcons
-              name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
-              size={20}
-              color={isBookmarked ? '#a9291c' : '#999'}
+              name="chevron-left"
+              size={22}
+              color={chapter && chapter > 1 ? colors.navy800 : colors.inkFaint}
+            />
+          </TouchableOpacity>
+          <Text style={styles.chapterLabel}>
+            {bookName} {chapter}
+          </Text>
+          <TouchableOpacity
+            onPress={nextChapter}
+            disabled={!book || !chapter || chapter >= book.chapters.length}
+            style={styles.navArrow}
+          >
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={22}
+              color={
+                book && chapter && chapter < book.chapters.length ? colors.navy800 : colors.inkFaint
+              }
             />
           </TouchableOpacity>
         </View>
-        <Text style={[styles.verseText, { fontSize }]}>
-          {item.text}
-        </Text>
-        <TouchableOpacity
-          onPress={() => handleCopyVerse(item)}
-          style={styles.copyButton}
-        >
-          <MaterialCommunityIcons name="content-copy" size={16} color="#a9291c" />
-          <Text style={styles.copyButtonText}>Copy</Text>
-        </TouchableOpacity>
+        <View style={styles.fontCtl}>
+          <TouchableOpacity onPress={() => setFontSize(Math.max(13, fontSize - 1))}>
+            <MaterialCommunityIcons name="format-font-size-decrease" size={18} color={colors.navy800} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setFontSize(Math.min(26, fontSize + 1))}>
+            <MaterialCommunityIcons name="format-font-size-increase" size={18} color={colors.navy800} />
+          </TouchableOpacity>
+        </View>
       </View>
-    );
-  };
+
+      <FlatList
+        data={chapterData?.verses || []}
+        keyExtractor={(v) => `${v.number}`}
+        contentContainerStyle={styles.verseList}
+        renderItem={({ item }) => {
+          const key = `${bookName}-${chapter}-${item.number}`;
+          const saved = bookmarkedKeys.has(key);
+          return (
+            <View style={styles.verseRow}>
+              <Text style={styles.verseNum}>{item.number}</Text>
+              <View style={styles.verseBody}>
+                <Text style={[styles.verseText, { fontSize, lineHeight: fontSize * 1.55 }]}>
+                  {item.text}
+                </Text>
+                <TouchableOpacity onPress={() => handleBookmark(item)} style={styles.verseAction}>
+                  <MaterialCommunityIcons
+                    name={saved ? 'bookmark' : 'bookmark-outline'}
+                    size={16}
+                    color={saved ? colors.red600 : colors.inkFaint}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        }}
+        ListEmptyComponent={
+          <Empty icon="book-open-outline" message="No verses in this chapter yet." />
+        }
+      />
+    </View>
+  );
 
   return (
     <View style={styles.container}>
-      {/* Header with book/chapter navigation */}
-      <View style={styles.header}>
-        <View style={styles.navigationRow}>
-          <Button
-            mode="text"
-            onPress={handlePreviousChapter}
-            disabled={selectedChapter === 1}
-            icon="chevron-left"
-          >
-            Prev
-          </Button>
-          <View style={styles.chapterInfo}>
-            <Text style={styles.chapterTitle}>
-              {selectedBook} {selectedChapter}
-            </Text>
-          </View>
-          <Button
-            mode="text"
-            onPress={handleNextChapter}
-            icon="chevron-right"
-          >
-            Next
-          </Button>
-        </View>
-
-        {/* Translation selector and font size */}
-        <View style={styles.controlsRow}>
-          <Menu
-            visible={menuVisible}
-            onDismiss={() => setMenuVisible(false)}
-            anchor={
-              <Button
-                mode="outlined"
-                onPress={() => setMenuVisible(true)}
-                compact
-              >
-                {selectedTranslation}
-              </Button>
-            }
-          >
-            <Menu.Item
-              onPress={() => handleChangeTranslation('KJV')}
-              title="KJV"
-            />
-            <Menu.Item
-              onPress={() => handleChangeTranslation('NIV')}
-              title="NIV"
-            />
-            <Menu.Item
-              onPress={() => handleChangeTranslation('ESV')}
-              title="ESV"
-            />
-          </Menu>
-
-          <View style={styles.fontSizeControl}>
-            <TouchableOpacity
-              onPress={() => setFontSize(Math.max(12, fontSize - 2))}
-              style={styles.fontButton}
-            >
-              <MaterialCommunityIcons name="minus" size={18} color="#a9291c" />
-            </TouchableOpacity>
-            <Text style={styles.fontSizeText}>{fontSize}</Text>
-            <TouchableOpacity
-              onPress={() => setFontSize(Math.min(24, fontSize + 2))}
-              style={styles.fontButton}
-            >
-              <MaterialCommunityIcons name="plus" size={18} color="#a9291c" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-
+      {renderTranslationRow()}
       {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" />
-        </View>
+        <Loading label="Loading scripture…" />
+      ) : error ? (
+        <Empty icon="alert-circle-outline" message={error} />
+      ) : mode === 'books' ? (
+        renderBooks()
+      ) : mode === 'chapters' ? (
+        renderChapters()
       ) : (
-        <FlatList
-          data={verses}
-          keyExtractor={(item) => `${item.book}-${item.chapter}-${item.verse}`}
-          renderItem={renderVerseItem}
-          contentContainerStyle={styles.listContent}
-          scrollEnabled
-        />
+        renderVerses()
       )}
     </View>
   );
@@ -241,99 +330,153 @@ export default function ReadScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.cream,
   },
-  header: {
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    paddingVertical: 12,
-  },
-  navigationRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    marginBottom: 8,
-  },
-  chapterInfo: {
-    alignItems: 'center',
-  },
-  chapterTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-  },
-  controlsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-  },
-  fontSizeControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  fontButton: {
-    padding: 4,
-  },
-  fontSizeText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    minWidth: 30,
-    textAlign: 'center',
-  },
-  loadingContainer: {
+  flex: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
-  listContent: {
-    padding: 12,
-    gap: 16,
+  pad: {
+    padding: spacing.md,
   },
-  verseContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#a9291c',
-  },
-  verseHeader: {
+  transRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.navy900,
+    flexGrow: 0,
   },
-  verseNumber: {
+  transChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: colors.navy700,
+    marginRight: 8,
+  },
+  transChipActive: {
+    backgroundColor: colors.red600,
+  },
+  transChipText: {
+    color: colors.lavSoft,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#a9291c',
+    letterSpacing: 0.5,
   },
-  bookmarkButton: {
-    padding: 4,
+  transChipTextActive: {
+    color: colors.white,
+  },
+  pageTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.ink,
+    marginBottom: 6,
+  },
+  bookGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: spacing.md,
+  },
+  bookTile: {
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.card,
+    padding: 14,
+    minWidth: '30%',
+    flexGrow: 1,
+    flexBasis: '30%',
+  },
+  bookTileText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.navy800,
+  },
+  bookTileMeta: {
+    fontSize: 11,
+    color: colors.inkFaint,
+    marginTop: 4,
+  },
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  backText: {
+    color: colors.red600,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  chapterGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: spacing.md,
+  },
+  chapterTile: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: colors.navy800,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chapterTileText: {
+    color: colors.white,
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  chapterBar: {
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  chapterNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  chapterLabel: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  navArrow: {
+    padding: 6,
+  },
+  fontCtl: {
+    position: 'absolute',
+    right: spacing.md,
+    top: 10,
+    flexDirection: 'row',
+    gap: 14,
+  },
+  verseList: {
+    padding: spacing.md,
+    paddingBottom: spacing.xl,
+  },
+  verseRow: {
+    flexDirection: 'row',
+    marginBottom: spacing.md,
+    gap: 12,
+  },
+  verseNum: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.red600,
+    marginTop: 3,
+    minWidth: 22,
+  },
+  verseBody: {
+    flex: 1,
   },
   verseText: {
-    color: '#333',
-    lineHeight: 24,
-    marginBottom: 8,
+    color: colors.ink,
   },
-  copyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-  },
-  copyButtonText: {
-    fontSize: 12,
-    color: '#a9291c',
-    fontWeight: '600',
+  verseAction: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    padding: 4,
   },
 });

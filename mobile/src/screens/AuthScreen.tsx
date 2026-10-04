@@ -1,6 +1,19 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
-import { TextInput, Button, Text, Divider } from 'react-native-paper';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Image,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors, radius, spacing } from '../theme';
+import { RedButton, Pill, textStyles } from '../components/Rpv';
 import { useAuthStore } from '../store/authStore';
 
 export default function AuthScreen(): React.ReactElement {
@@ -17,19 +30,15 @@ export default function AuthScreen(): React.ReactElement {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
     if (isSignUp && password !== confirmPassword) {
       Alert.alert('Error', 'Passwords do not match');
       return;
     }
-
     try {
       if (isSignUp) {
-        await signUp(email, password);
-        Alert.alert('Success', 'Account created successfully');
+        await signUp(email.trim(), password);
       } else {
-        await signIn(email, password);
-        Alert.alert('Success', 'Signed in successfully');
+        await signIn(email.trim(), password);
       }
     } catch (err: any) {
       Alert.alert('Error', err.message);
@@ -41,149 +50,148 @@ export default function AuthScreen(): React.ReactElement {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <Text variant="headlineMedium" style={styles.title}>
-            RPV Bible
-          </Text>
-          <Text variant="bodyMedium" style={styles.subtitle}>
-            {isSignUp ? 'Create Account' : 'Sign In'}
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.hero}>
+          <Image source={require('../../assets/icon.png')} style={styles.logo} />
+          <View style={styles.pillRow}>
+            <Pill variant="navy">Redemption Project Version</Pill>
+          </View>
+          <Text style={textStyles.heroTitle}>A Bible built for today.</Text>
+          <Text style={styles.heroSub}>
+            {isSignUp
+              ? 'Create an account to sync bookmarks and preferences.'
+              : 'Sign in to sync bookmarks and preferences across devices.'}
           </Text>
         </View>
 
         <View style={styles.form}>
-          <TextInput
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            mode="outlined"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            editable={!loading}
-            style={styles.input}
-          />
-
-          <TextInput
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            mode="outlined"
-            secureTextEntry={!showPassword}
-            editable={!loading}
-            right={
-              <TextInput.Icon
-                icon={showPassword ? 'eye-off' : 'eye'}
-                onPress={() => setShowPassword(!showPassword)}
-              />
-            }
-            style={styles.input}
-          />
-
-          {isSignUp && (
+          <View style={styles.inputWrap}>
+            <MaterialCommunityIcons name="email-outline" size={18} color={colors.inkFaint} />
             <TextInput
-              label="Confirm Password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              mode="outlined"
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor={colors.inkFaint}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              editable={!loading}
+            />
+          </View>
+
+          <View style={styles.inputWrap}>
+            <MaterialCommunityIcons name="lock-outline" size={18} color={colors.inkFaint} />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor={colors.inkFaint}
+              value={password}
+              onChangeText={setPassword}
               secureTextEntry={!showPassword}
               editable={!loading}
-              style={styles.input}
             />
-          )}
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              <MaterialCommunityIcons
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={18}
+                color={colors.inkFaint}
+              />
+            </TouchableOpacity>
+          </View>
 
-          {error && (
-            <Text variant="bodySmall" style={styles.errorText}>
-              {error}
-            </Text>
-          )}
+          {isSignUp ? (
+            <View style={styles.inputWrap}>
+              <MaterialCommunityIcons name="lock-check-outline" size={18} color={colors.inkFaint} />
+              <TextInput
+                style={styles.input}
+                placeholder="Confirm Password"
+                placeholderTextColor={colors.inkFaint}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry={!showPassword}
+                editable={!loading}
+              />
+            </View>
+          ) : null}
 
-          <Button
-            mode="contained"
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          <RedButton
+            title={isSignUp ? 'Create Account' : 'Sign In'}
             onPress={handleAuth}
             loading={loading}
-            disabled={loading}
-            style={styles.button}
-          >
-            {isSignUp ? 'Create Account' : 'Sign In'}
-          </Button>
+            style={styles.submit}
+          />
 
-          <Divider style={styles.divider} />
-
-          <Button
-            mode="text"
+          <TouchableOpacity
             onPress={() => {
               setIsSignUp(!isSignUp);
-              setEmail('');
               setPassword('');
               setConfirmPassword('');
             }}
             disabled={loading}
+            style={styles.switchRow}
           >
-            {isSignUp
-              ? 'Already have an account? Sign In'
-              : "Don't have an account? Sign Up"}
-          </Button>
+            <Text style={styles.switchText}>
+              {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.infoBox}>
-          <Text variant="bodySmall" style={styles.infoText}>
-            Sign in to sync your bookmarks and preferences across devices. Your data is
-            securely stored and encrypted.
-          </Text>
-        </View>
+        <Text style={styles.footer}>
+          Your data is securely stored and encrypted.
+        </Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
+  container: { flex: 1, backgroundColor: colors.cream },
+  scroll: { flexGrow: 1, paddingBottom: spacing.xl },
+  hero: {
+    backgroundColor: colors.navy900,
+    padding: spacing.lg,
+    paddingTop: spacing.xl + spacing.lg,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    alignItems: 'flex-start',
   },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 16,
+  logo: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+    marginBottom: spacing.md,
   },
-  header: {
+  pillRow: { flexDirection: 'row', marginBottom: spacing.sm },
+  heroSub: { color: colors.lavSoft, fontSize: 13, lineHeight: 19, marginTop: 8 },
+  form: { padding: spacing.lg },
+  inputWrap: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 32,
-  },
-  title: {
-    color: '#a9291c',
-    fontWeight: 'bold',
-  },
-  subtitle: {
-    color: '#666',
-    marginTop: 8,
-  },
-  form: {
-    marginBottom: 24,
+    gap: 10,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.input,
+    paddingHorizontal: 14,
+    marginBottom: spacing.sm,
   },
   input: {
-    marginBottom: 12,
+    flex: 1,
+    fontSize: 15,
+    color: colors.ink,
+    paddingVertical: 12,
   },
-  errorText: {
-    color: '#d32f2f',
-    marginBottom: 12,
-  },
-  button: {
-    marginTop: 12,
-    backgroundColor: '#a9291c',
-  },
-  divider: {
-    marginVertical: 16,
-  },
-  infoBox: {
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#a9291c',
-  },
-  infoText: {
-    color: '#666',
-    lineHeight: 20,
+  error: { color: colors.red700, fontSize: 13, marginBottom: spacing.sm },
+  submit: { marginTop: spacing.xs },
+  switchRow: { alignItems: 'center', marginTop: spacing.md },
+  switchText: { color: colors.navy800, fontWeight: '600', fontSize: 14 },
+  footer: {
+    textAlign: 'center',
+    color: colors.inkFaint,
+    fontSize: 12,
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.xl,
   },
 });

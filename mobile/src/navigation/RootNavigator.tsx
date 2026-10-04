@@ -1,262 +1,321 @@
-import React from 'react';
-import { createNativeStackNavigator, NativeStackScreenProps } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createDrawerNavigator } from '@react-navigation/drawer';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import {
+  createDrawerNavigator,
+  DrawerContentScrollView,
+  DrawerContentComponentProps,
+} from '@react-navigation/drawer';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { DrawerNavigationProp } from '@react-navigation/drawer';
-import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
-import { CompositeNavigationProp } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
+import { useAdminStore } from '../store/adminStore';
+import { colors, spacing } from '../theme';
 
-// Screens
 import HomeScreen from '../screens/HomeScreen';
-import SearchScreen from '../screens/SearchScreen';
 import ReadScreen from '../screens/ReadScreen';
+import SearchScreen from '../screens/SearchScreen';
+import BibleSearchScreen from '../screens/BibleSearchScreen';
+import DevotionalsScreen from '../screens/DevotionalsScreen';
+import PlansScreen from '../screens/PlansScreen';
+import StoreScreen from '../screens/StoreScreen';
+import HubScreen from '../screens/HubScreen';
 import BookmarksScreen from '../screens/BookmarksScreen';
-import SettingsScreen from '../screens/SettingsScreen';
 import TranslationScreen from '../screens/TranslationScreen';
-import AuthScreen from '../screens/AuthScreen';
+import SettingsScreen from '../screens/SettingsScreen';
 import AdminScreen from '../screens/AdminScreen';
-
-// Navigation type definitions
-export type RootStackParamList = {
-  MainTabs: undefined;
-  SearchDetail: { query: string };
-  ReadDetail: { book: string; chapter: number };
-};
-
-export type TabParamList = {
-  Home: undefined;
-  Search: undefined;
-  Read: undefined;
-  Bookmarks: undefined;
-  Settings: undefined;
-};
+import AuthScreen from '../screens/AuthScreen';
 
 export type DrawerParamList = {
-  MainTabs: undefined;
-  Settings: undefined;
+  Dashboard: undefined;
+  Read: { book?: string; chapter?: number } | undefined;
+  Search: { query?: string; translationId?: string } | undefined;
+  BibleSearch: undefined;
+  Study: { hub: string };
+  News: { hub: string };
+  Explore: { hub: string };
+  Store: undefined;
+  Devotionals: undefined;
+  Plans: undefined;
+  Bookmarks: undefined;
   Translations: undefined;
+  Settings: undefined;
   Admin: undefined;
+  Auth: undefined;
 };
 
-// Navigation prop types
-export type RootStackNavigationProp = NativeStackScreenProps<RootStackParamList>;
-export type TabNavigationProp = CompositeNavigationProp<
-  BottomTabNavigationProp<TabParamList>,
-  NativeStackScreenProps<RootStackParamList>['navigation']
->;
-export type DrawerNavigationProp_ = DrawerNavigationProp<DrawerParamList>;
-
-const Stack = createNativeStackNavigator<RootStackParamList>();
-const Tab = createBottomTabNavigator<TabParamList>();
 const Drawer = createDrawerNavigator<DrawerParamList>();
-const AuthStack = createNativeStackNavigator();
+const Stack = createNativeStackNavigator();
 
-function TabNavigator(): React.ReactElement {
+type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+interface NavItem {
+  label: string;
+  icon: IconName;
+  route: keyof DrawerParamList;
+}
+
+const MAIN_ITEMS: NavItem[] = [
+  { label: 'Dashboard', icon: 'home-outline', route: 'Dashboard' },
+  { label: 'Read the Bible', icon: 'book-open-variant', route: 'Read' },
+  { label: 'AI Bible Search', icon: 'creation', route: 'BibleSearch' },
+  { label: 'Search', icon: 'magnify', route: 'Search' },
+];
+
+const EXPLORE_ITEMS: NavItem[] = [
+  { label: 'Study Tools', icon: 'school-outline', route: 'Study' },
+  { label: 'Bible News', icon: 'newspaper-variant-outline', route: 'News' },
+  { label: 'Explore More', icon: 'compass-outline', route: 'Explore' },
+  { label: 'Daily Devotional', icon: 'calendar', route: 'Devotionals' },
+  { label: 'Store', icon: 'storefront-outline', route: 'Store' },
+];
+
+const ACCOUNT_ITEMS: NavItem[] = [
+  { label: 'Reading Plans', icon: 'calendar-check', route: 'Plans' },
+  { label: 'Bookmarks', icon: 'bookmark-outline', route: 'Bookmarks' },
+  { label: 'Translations', icon: 'translate', route: 'Translations' },
+  { label: 'Settings', icon: 'cog-outline', route: 'Settings' },
+];
+
+function DrawerItem({
+  item,
+  navigation,
+  active,
+}: {
+  item: NavItem;
+  navigation: any;
+  active: boolean;
+}): React.ReactElement {
   return (
-    <Tab.Navigator
-      screenOptions={({ route }: any) => ({
-        tabBarIcon: ({ focused, color, size }: any) => {
-          let iconName: string;
-
-          switch (route.name) {
-            case 'Home':
-              iconName = focused ? 'home' : 'home-outline';
-              break;
-            case 'Search':
-              iconName = focused ? 'magnify' : 'magnify';
-              break;
-            case 'Read':
-              iconName = focused ? 'book' : 'book-outline';
-              break;
-            case 'Bookmarks':
-              iconName = focused ? 'bookmark' : 'bookmark-outline';
-              break;
-            case 'Settings':
-              iconName = focused ? 'cog' : 'cog-outline';
-              break;
-            default:
-              iconName = 'home-outline';
-          }
-
-          return (
-            <MaterialCommunityIcons name={iconName} size={size} color={color} />
-          );
-        },
-        tabBarActiveTintColor: '#a9291c',
-        tabBarInactiveTintColor: '#999',
-        headerShown: true,
-        headerStyle: {
-          backgroundColor: '#a9291c',
-        },
-        headerTintColor: '#fff',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-        },
-      })}
+    <TouchableOpacity
+      style={[styles.navItem, active && styles.navItemActive]}
+      onPress={() => navigation.navigate(item.route)}
     >
-      <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{
-          title: 'RPV Bible',
-          headerShown: true,
-        }}
+      <MaterialCommunityIcons
+        name={item.icon}
+        size={20}
+        color={active ? colors.white : colors.lavSoft}
       />
-      <Tab.Screen
-        name="Search"
-        component={SearchScreen}
-        options={{
-          title: 'Search',
-          headerShown: true,
-        }}
-      />
-      <Tab.Screen
-        name="Read"
-        component={ReadScreen}
-        options={{
-          title: 'Read',
-          headerShown: true,
-        }}
-      />
-      <Tab.Screen
-        name="Bookmarks"
-        component={BookmarksScreen}
-        options={{
-          title: 'Bookmarks',
-          headerShown: true,
-        }}
-      />
-      <Tab.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{
-          title: 'Settings',
-          headerShown: true,
-        }}
-      />
-    </Tab.Navigator>
+      <Text style={[styles.navLabel, active && styles.navLabelActive]}>{item.label}</Text>
+    </TouchableOpacity>
   );
 }
 
-function StackNavigator(): React.ReactElement {
+function RpvDrawerContent(props: DrawerContentComponentProps): React.ReactElement {
+  const { navigation, state } = props;
+  const { user, isAuthenticated } = useAuthStore();
+  const { isAdmin, getAdminUser } = useAdminStore();
+
+  useEffect(() => {
+    if (user) getAdminUser(user.uid);
+  }, [user]);
+
+  const activeRoute = state.routeNames[state.index];
+
+  const renderItem = (item: NavItem) => (
+    <DrawerItem
+      key={item.route}
+      item={item}
+      navigation={navigation}
+      active={activeRoute === item.route}
+    />
+  );
+
   return (
-    <Stack.Navigator
-      screenOptions={{
-        headerStyle: {
-          backgroundColor: '#a9291c',
-        },
-        headerTintColor: '#fff',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-        },
-      }}
-    >
-      <Stack.Screen
-        name="MainTabs"
-        component={TabNavigator}
-        options={{
-          headerShown: false,
-        }}
-      />
-      <Stack.Screen
-        name="SearchDetail"
-        component={ReadScreen}
-        options={{
-          title: 'Verse Details',
-          presentation: 'modal',
-        }}
-      />
-      <Stack.Screen
-        name="ReadDetail"
-        component={ReadScreen}
-        options={{
-          title: 'Read Bible',
-          presentation: 'card',
-        }}
-      />
-    </Stack.Navigator>
+    <View style={styles.drawer}>
+      <DrawerContentScrollView {...props} contentContainerStyle={styles.drawerScroll}>
+        {/* Brand — mirrors .rpv-brand */}
+        <View style={styles.brand}>
+          <Image source={require('../../assets/icon.png')} style={styles.brandMark} />
+          <Text style={styles.brandName}>
+            RPV <Text style={styles.brandNameThin}>Bible</Text>
+          </Text>
+        </View>
+
+        <View style={styles.navGroup}>{MAIN_ITEMS.map(renderItem)}</View>
+
+        <View style={styles.navGroup}>
+          <Text style={styles.navSection}>Explore</Text>
+          {EXPLORE_ITEMS.map(renderItem)}
+        </View>
+
+        <View style={styles.navGroup}>
+          <Text style={styles.navSection}>Account</Text>
+          {isAuthenticated ? (
+            <>
+              {ACCOUNT_ITEMS.map(renderItem)}
+              {isAdmin ? (
+                <DrawerItem
+                  item={{ label: 'Admin', icon: 'shield-crown', route: 'Admin' }}
+                  navigation={navigation}
+                  active={activeRoute === 'Admin'}
+                />
+              ) : null}
+            </>
+          ) : (
+            <DrawerItem
+              item={{ label: 'Sign In', icon: 'login', route: 'Auth' }}
+              navigation={navigation}
+              active={activeRoute === 'Auth'}
+            />
+          )}
+        </View>
+      </DrawerContentScrollView>
+
+      {/* Footer — mirrors .rpv-sidebar-foot */}
+      <View style={styles.footer}>
+        <Text style={styles.footerText}>
+          Redemption Project Version{'\n'}© {new Date().getFullYear()} The Redemption Project
+        </Text>
+      </View>
+    </View>
   );
 }
 
-function DrawerNavigator(): React.ReactElement {
+function MainDrawer(): React.ReactElement {
   return (
     <Drawer.Navigator
+      drawerContent={(props) => <RpvDrawerContent {...props} />}
       screenOptions={{
-        headerStyle: {
-          backgroundColor: '#a9291c',
-        },
-        headerTintColor: '#fff',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-        },
-        drawerActiveTintColor: '#a9291c',
-        drawerInactiveTintColor: '#999',
+        headerStyle: { backgroundColor: colors.navy900 },
+        headerTintColor: colors.white,
+        headerTitleStyle: { fontWeight: '700' },
+        drawerStyle: { backgroundColor: colors.navy900, width: 280 },
+        sceneContainerStyle: { backgroundColor: colors.cream },
       }}
     >
+      <Drawer.Screen name="Dashboard" component={HomeScreen} options={{ title: 'RPV Bible' }} />
+      <Drawer.Screen name="Read" component={ReadScreen} options={{ title: 'Read the Bible' }} />
+      <Drawer.Screen name="Search" component={SearchScreen} options={{ title: 'Search' }} />
       <Drawer.Screen
-        name="MainTabs"
-        component={StackNavigator}
-        options={{
-          title: 'Home',
-          drawerIcon: ({ color, size }: any) => (
-            <MaterialCommunityIcons name="home" size={size} color={color} />
-          ),
-          headerShown: false,
-        }}
+        name="BibleSearch"
+        component={BibleSearchScreen}
+        options={{ title: 'AI Bible Search' }}
       />
+      <Drawer.Screen
+        name="Study"
+        component={HubScreen}
+        initialParams={{ hub: 'Study' }}
+        options={{ title: 'Study Tools' }}
+      />
+      <Drawer.Screen
+        name="News"
+        component={HubScreen}
+        initialParams={{ hub: 'News' }}
+        options={{ title: 'Bible News' }}
+      />
+      <Drawer.Screen
+        name="Explore"
+        component={HubScreen}
+        initialParams={{ hub: 'Explore' }}
+        options={{ title: 'Explore More' }}
+      />
+      <Drawer.Screen name="Store" component={StoreScreen} options={{ title: 'Store' }} />
+      <Drawer.Screen
+        name="Devotionals"
+        component={DevotionalsScreen}
+        options={{ title: 'Devotionals' }}
+      />
+      <Drawer.Screen name="Plans" component={PlansScreen} options={{ title: 'Reading Plans' }} />
+      <Drawer.Screen name="Bookmarks" component={BookmarksScreen} options={{ title: 'Bookmarks' }} />
       <Drawer.Screen
         name="Translations"
         component={TranslationScreen}
-        options={{
-          title: 'Translations',
-          drawerIcon: ({ color, size }: any) => (
-            <MaterialCommunityIcons name="translate" size={size} color={color} />
-          ),
-        }}
+        options={{ title: 'Translations' }}
       />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
+      <Drawer.Screen name="Admin" component={AdminScreen} options={{ title: 'Admin' }} />
       <Drawer.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{
-          title: 'Settings',
-          drawerIcon: ({ color, size }: any) => (
-            <MaterialCommunityIcons name="cog" size={size} color={color} />
-          ),
-        }}
-      />
-      <Drawer.Screen
-        name="Admin"
-        component={AdminScreen}
-        options={{
-          title: 'Admin',
-          drawerIcon: ({ color, size }: any) => (
-            <MaterialCommunityIcons name="shield-admin" size={size} color={color} />
-          ),
-        }}
+        name="Auth"
+        component={AuthScreen}
+        options={{ title: 'Sign In', headerShown: false }}
       />
     </Drawer.Navigator>
   );
 }
 
 export default function RootNavigator(): React.ReactElement {
-  const { user, loading } = useAuthStore();
-
-  // Show auth screen if not authenticated and not loading
-  if (!user && !loading) {
-    return (
-      <AuthStack.Navigator
-        screenOptions={{
-          headerShown: false,
-          animation: 'none',
-        }}
-      >
-        <AuthStack.Screen name="Auth" component={AuthScreen} />
-      </AuthStack.Navigator>
-    );
-  }
-
-  // Show main app if authenticated
-  return <DrawerNavigator />;
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false, animation: 'none' }}>
+      <Stack.Screen name="Main" component={MainDrawer} />
+    </Stack.Navigator>
+  );
 }
+
+const styles = StyleSheet.create({
+  drawer: {
+    flex: 1,
+    backgroundColor: colors.navy900,
+  },
+  drawerScroll: {
+    paddingTop: 0,
+  },
+  brand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderNavy,
+  },
+  brandMark: {
+    width: 34,
+    height: 34,
+    borderRadius: 9,
+  },
+  brandName: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  brandNameThin: {
+    fontWeight: '400',
+    color: colors.lavSoft,
+  },
+  navGroup: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  navSection: {
+    color: colors.inkFaint,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    paddingHorizontal: spacing.sm,
+    marginBottom: 6,
+  },
+  navItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 11,
+    borderRadius: 10,
+    marginBottom: 2,
+  },
+  navItemActive: {
+    backgroundColor: colors.navy700,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.red600,
+  },
+  navLabel: {
+    color: colors.lavSoft,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  navLabelActive: {
+    color: colors.white,
+    fontWeight: '700',
+  },
+  footer: {
+    borderTopWidth: 1,
+    borderTopColor: colors.borderNavy,
+    padding: spacing.md,
+  },
+  footerText: {
+    color: colors.inkFaint,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+});

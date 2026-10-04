@@ -1,135 +1,161 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
-import { TextInput, Text, ActivityIndicator, Chip } from 'react-native-paper';
-import searchService, { SearchResult } from '../services/searchService';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { colors, radius, spacing } from '../theme';
+import { RpvCard, Eyebrow, Pill, Empty } from '../components/Rpv';
+import {
+  searchVerses,
+  getSelectedTranslation,
+  SearchHit,
+} from '../services/bible';
+
+const RECENT_KEY = 'rpv:recentSearches';
 
 export default function SearchScreen(): React.ReactElement {
-  const [query, setQuery] = useState('');
+  const route = useRoute<any>();
+  const navigation = useNavigation<any>();
+  const [query, setQuery] = useState(route.params?.query || '');
+  const [translationId, setTranslationId] = useState(route.params?.translationId || 'RPV');
+  const [results, setResults] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [showRecent, setShowRecent] = useState(true);
-  const debounceTimer = useRef<NodeJS.Timeout>();
+  const [recent, setRecent] = useState<string[]>([]);
+  const debounce = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
-    // Load recent searches on mount
-    setRecentSearches(searchService.getRecentSearches());
+    (async () => {
+      setTranslationId(await getSelectedTranslation());
+      const raw = await AsyncStorage.getItem(RECENT_KEY).catch(() => null);
+      setRecent(raw ? JSON.parse(raw) : []);
+    })();
   }, []);
 
-  const handleSearch = async (searchQuery: string): Promise<void> => {
-    if (!searchQuery.trim()) {
-      setResults([]);
-      setShowRecent(true);
-      return;
+  useEffect(() => {
+    if (route.params?.query) {
+      runSearch(route.params.query);
     }
+  }, [route.params?.query]);
 
-    setLoading(true);
-    setShowRecent(false);
-    try {
-      const searchResults = await searchService.search({
-        query: searchQuery,
-        limit: 50,
-      });
-      setResults(searchResults);
-      setRecentSearches(searchService.getRecentSearches());
-    } catch (error) {
-      console.error('Search error:', error);
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const saveRecent = useCallback(async (q: string) => {
+    setRecent((prev) => {
+      const next = [q, ...prev.filter((r) => r !== q)].slice(0, 10);
+      AsyncStorage.setItem(RECENT_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
 
-  const handleQueryChange = (text: string): void => {
-    setQuery(text);
-
-    // Debounce search
-    if (debounceTimer.current) {
-      clearTimeout(debounceTimer.current);
-    }
-
-    if (text.trim()) {
-      debounceTimer.current = setTimeout(() => {
-        handleSearch(text);
-      }, 300);
-    } else {
-      setResults([]);
-      setShowRecent(true);
-    }
-  };
-
-  const handleRecentSearch = (recentQuery: string): void => {
-    setQuery(recentQuery);
-    handleSearch(recentQuery);
-  };
-
-  const renderResultItem = ({ item }: { item: SearchResult }): React.ReactElement => (
-    <TouchableOpacity style={styles.resultItem}>
-      <Text variant="titleSmall" style={styles.resultTitle}>
-        {item.book} {item.chapter}:{item.verse}
-      </Text>
-      <Text variant="bodySmall" style={styles.resultText} numberOfLines={3}>
-        {item.text}
-      </Text>
-      <Text variant="labelSmall" style={styles.resultTranslation}>
-        {item.translation}
-      </Text>
-    </TouchableOpacity>
+  const runSearch = useCallback(
+    async (q: string) => {
+      const needle = q.trim();
+      if (!needle) {
+        setResults([]);
+        return;
+      }
+      setLoading(true);
+      try {
+        const hits = await searchVerses(needle, translationId);
+        setResults(hits);
+        saveRecent(needle);
+      } catch (e) {
+        console.error('Search failed:', e);
+        setResults([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [translationId, saveRecent]
   );
 
-  const renderRecentSearches = (): React.ReactElement => (
-    <View style={styles.recentContainer}>
-      <Text variant="titleSmall" style={styles.recentTitle}>
-        Recent Searches
-      </Text>
-      <View style={styles.chipsContainer}>
-        {recentSearches.length > 0 ? (
-          recentSearches.map((search, index) => (
-            <Chip
-              key={index}
-              onPress={() => handleRecentSearch(search)}
-              style={styles.chip}
-            >
-              {search}
-            </Chip>
-          ))
-        ) : (
-          <Text variant="bodySmall" style={styles.noRecentText}>
-            No recent searches
-          </Text>
-        )}
-      </View>
-    </View>
+  const onChange = useCallback(
+    (text: string) => {
+      setQuery(text);
+      if (debounce.current) clearTimeout(debounce.current);
+      if (text.trim().length >= 3) {
+        debounce.current = setTimeout(() => runSearch(text), 400);
+      } else {
+        setResults([]);
+      }
+    },
+    [runSearch]
+  );
+
+  const openVerse = useCallback(
+    (hit: SearchHit) => {
+      navigation.navigate('Read', { book: hit.book, chapter: hit.chapter });
+    },
+    [navigation]
   );
 
   return (
     <View style={styles.container}>
-      <TextInput
-        label="Search verses..."
-        value={query}
-        onChangeText={handleQueryChange}
-        style={styles.searchInput}
-        mode="outlined"
-        right={loading ? <TextInput.Icon icon="loading" /> : undefined}
-      />
+      <View style={styles.searchBar}>
+        <MaterialCommunityIcons name="magnify" size={20} color={colors.inkFaint} />
+        <TextInput
+          style={styles.input}
+          placeholder="Search verses…"
+          placeholderTextColor={colors.inkFaint}
+          value={query}
+          onChangeText={onChange}
+          autoCapitalize="none"
+          returnKeyType="search"
+          onSubmitEditing={() => runSearch(query)}
+        />
+        {loading ? (
+          <MaterialCommunityIcons name="loading" size={20} color={colors.red600} />
+        ) : query.length > 0 ? (
+          <TouchableOpacity onPress={() => onChange('')}>
+            <MaterialCommunityIcons name="close-circle" size={18} color={colors.inkFaint} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
 
-      {loading && <ActivityIndicator style={styles.loader} />}
+      <View style={styles.metaRow}>
+        <Pill variant="navy">{translationId}</Pill>
+        <TouchableOpacity onPress={() => navigation.navigate('BibleSearch')}>
+          <Text style={styles.aiLink}>Try AI Bible Search →</Text>
+        </TouchableOpacity>
+      </View>
 
-      {showRecent && !loading ? (
-        renderRecentSearches()
-      ) : results.length === 0 && !loading && query.trim() ? (
-        <View style={styles.emptyState}>
-          <Text variant="bodyMedium" style={styles.emptyText}>
-            No verses found
-          </Text>
-        </View>
+      {results.length === 0 && !loading && query.trim().length === 0 ? (
+        <RpvCard style={styles.recentCard}>
+          <Eyebrow>Recent Searches</Eyebrow>
+          <View style={styles.chips}>
+            {recent.length ? (
+              recent.map((r) => (
+                <TouchableOpacity key={r} style={styles.chip} onPress={() => onChange(r)}>
+                  <Text style={styles.chipText}>{r}</Text>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <Text style={styles.hint}>No recent searches</Text>
+            )}
+          </View>
+        </RpvCard>
       ) : null}
 
       <FlatList
         data={results}
-        keyExtractor={(item) => `${item.book}-${item.chapter}-${item.verse}`}
-        renderItem={renderResultItem}
-        scrollEnabled={results.length > 0}
+        keyExtractor={(h) => `${h.book}-${h.chapter}-${h.verse}`}
+        contentContainerStyle={styles.list}
+        renderItem={({ item }) => (
+          <TouchableOpacity onPress={() => openVerse(item)}>
+            <RpvCard style={styles.resultCard}>
+              <Text style={styles.ref}>
+                {item.book} {item.chapter}:{item.verse}
+              </Text>
+              <Text style={styles.text} numberOfLines={3}>
+                {item.text}
+              </Text>
+              <Text style={styles.trans}>{item.translation.toUpperCase()}</Text>
+            </RpvCard>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
+          query.trim().length >= 3 && !loading ? (
+            <Empty icon="text-search" message={`No verses found for "${query}"`} />
+          ) : null
+        }
       />
     </View>
   );
@@ -138,60 +164,86 @@ export default function SearchScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.cream,
   },
-  searchInput: {
-    marginBottom: 16,
-  },
-  loader: {
-    marginTop: 20,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
+  searchBar: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+    margin: spacing.md,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.input,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  emptyText: {
-    color: '#999',
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: colors.ink,
+    padding: 0,
   },
-  resultItem: {
-    backgroundColor: '#fff',
-    padding: 12,
-    marginBottom: 8,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#a9291c',
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
   },
-  resultTitle: {
-    fontWeight: '600',
-    color: '#a9291c',
-    marginBottom: 4,
+  aiLink: {
+    color: colors.red600,
+    fontWeight: '700',
+    fontSize: 13,
   },
-  resultText: {
-    color: '#333',
-    marginBottom: 8,
-    lineHeight: 20,
+  recentCard: {
+    marginHorizontal: spacing.md,
   },
-  resultTranslation: {
-    color: '#999',
-  },
-  recentContainer: {
-    padding: 16,
-  },
-  recentTitle: {
-    marginBottom: 12,
-    fontWeight: '600',
-  },
-  chipsContainer: {
+  chips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
   chip: {
-    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
-  noRecentText: {
-    color: '#999',
+  chipText: {
+    color: colors.inkSoft,
+    fontSize: 13,
+  },
+  hint: {
+    color: colors.inkFaint,
+    fontSize: 13,
+  },
+  list: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xl,
+  },
+  resultCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: colors.red600,
+  },
+  ref: {
+    fontWeight: '700',
+    color: colors.navy800,
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  text: {
+    color: colors.inkSoft,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 6,
+  },
+  trans: {
+    color: colors.inkFaint,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
 });

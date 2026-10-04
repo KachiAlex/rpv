@@ -1,112 +1,290 @@
-import React, { useEffect } from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
-import { Text, Card, ActivityIndicator } from 'react-native-paper';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  Alert,
+  RefreshControl,
+} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { colors, radius, spacing } from '../theme';
+import {
+  RpvCard,
+  Eyebrow,
+  Pill,
+  RedButton,
+  OutlineButton,
+  SectionHead,
+  textStyles,
+} from '../components/Rpv';
+import {
+  getTranslations,
+  getSelectedTranslation,
+  setSelectedTranslation,
+  getTodayDevotional,
+  Devotional,
+  RpvTranslation,
+} from '../services/bible';
 import { useAuthStore } from '../store/authStore';
+import { getAuthToken } from '../services/api';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://rpvbible.com';
+
+const FEATURES = [
+  {
+    icon: 'calendar-check' as const,
+    title: 'Daily Reading Hub',
+    body: 'Choose your translation, set a plan, and follow curated passages that refresh every morning.',
+  },
+  {
+    icon: 'tools' as const,
+    title: 'Study Tools',
+    body: 'Jump to commentaries, footnotes, and the AI assistant without leaving the passage you are reading.',
+  },
+  {
+    icon: 'projector' as const,
+    title: 'Projector Ready',
+    body: 'Send verses and highlights straight to the projector screen in a single tap.',
+  },
+];
 
 export default function HomeScreen(): React.ReactElement {
-  const { user, initializeAuth, loading } = useAuthStore();
+  const navigation = useNavigation<any>();
+  const { user } = useAuthStore();
+  const [translations, setTranslations] = useState<RpvTranslation[]>([]);
+  const [selectedTranslation, setSelected] = useState('RPV');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [notifyEmail, setNotifyEmail] = useState('');
+  const [notifyState, setNotifyState] = useState<'idle' | 'sending' | 'done'>('idle');
+  const [devotional, setDevotional] = useState<Devotional | null>(null);
 
-  useEffect(() => {
-    initializeAuth();
+  const load = useCallback(async (force = false) => {
+    try {
+      const list = await getTranslations(force);
+      setTranslations(list);
+      const saved = await getSelectedTranslation();
+      setSelected(list.some((t) => t.id === saved) ? saved : list[0]?.id || 'RPV');
+    } catch (error) {
+      console.error('Failed to load translations:', error);
+    }
+    setDevotional(await getTodayDevotional());
   }, []);
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load(true);
+    setRefreshing(false);
+  }, [load]);
+
+  const handleSearch = useCallback(() => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    navigation.navigate('Search', { query: q, translationId: selectedTranslation });
+  }, [navigation, searchQuery, selectedTranslation]);
+
+  const handleSelectTranslation = useCallback(async (id: string) => {
+    setSelected(id);
+    await setSelectedTranslation(id);
+  }, []);
+
+  const handleNotify = useCallback(async () => {
+    const email = notifyEmail.trim();
+    if (!email || !email.includes('@')) {
+      Alert.alert('Enter a valid email address');
+      return;
+    }
+    setNotifyState('sending');
+    try {
+      const token = getAuthToken();
+      await fetch(`${API_URL}/api/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          type: 'newsletter',
+          email,
+          message: 'Launch notification signup (mobile)',
+        }),
+      });
+      setNotifyState('done');
+    } catch {
+      setNotifyState('idle');
+      Alert.alert('Could not subscribe right now. Please try again later.');
+    }
+  }, [notifyEmail]);
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text variant="headlineLarge" style={styles.title}>
-          RPV Bible
+    <ScrollView
+      style={styles.container}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.red600} />}
+    >
+      {/* Hero — mirrors .rpv-hero */}
+      <View style={styles.hero}>
+        <View style={styles.pillRow}>
+          <Pill variant="red">NEW</Pill>
+          <Pill variant="navy">Redemption Project Version</Pill>
+        </View>
+        <Text style={textStyles.heroTitle}>A Bible built for today.</Text>
+        <Text style={styles.heroBody}>
+          Read, search, and study the Bible with a clean, distraction-free experience. Powered by AI
+          for deeper understanding.
         </Text>
-        <Text variant="bodyMedium" style={styles.subtitle}>
-          Study Scripture with confidence
+
+        <View style={styles.heroForm}>
+          <TextInput
+            style={styles.heroInput}
+            placeholder="Enter your email to get notified"
+            placeholderTextColor={colors.inkFaint}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={notifyEmail}
+            onChangeText={setNotifyEmail}
+            editable={notifyState !== 'done'}
+          />
+          <RedButton
+            title={notifyState === 'done' ? 'Subscribed' : 'Notify Me'}
+            onPress={handleNotify}
+            loading={notifyState === 'sending'}
+            disabled={notifyState === 'done'}
+            style={styles.heroButton}
+          />
+        </View>
+      </View>
+
+      {/* Red strip — mirrors .rpv-strip */}
+      <View style={styles.strip}>
+        <Text style={styles.stripText}>
+          Take your Bible study anywhere — RPV keeps trusted tools and insights connected to the
+          passage you are reading.
         </Text>
-        {user && (
-          <Text variant="labelSmall" style={styles.userInfo}>
-            Signed in as {user.email}
-          </Text>
-        )}
       </View>
 
       <View style={styles.content}>
-        {!user && (
-          <Card style={[styles.card, styles.authCard]}>
-            <Card.Content>
-              <View style={styles.authCardContent}>
-                <MaterialCommunityIcons name="lock-outline" size={32} color="#a9291c" />
-                <Text variant="titleMedium" style={styles.authCardTitle}>
-                  Sign In to Sync
-                </Text>
-                <Text variant="bodySmall" style={styles.authCardText}>
-                  Sign in to save bookmarks and sync across devices
-                </Text>
-              </View>
-            </Card.Content>
-          </Card>
+        {/* Smart Search card */}
+        <RpvCard>
+          <Eyebrow>Smart Search</Eyebrow>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Enter passage, keyword, or topic"
+            placeholderTextColor={colors.inkFaint}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={handleSearch}
+            returnKeyType="search"
+          />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.transRow}>
+            {translations.map((t) => (
+              <Pill
+                key={t.id}
+                variant={t.id === selectedTranslation ? 'red' : 'navy'}
+              >
+                {t.id === selectedTranslation ? `✓ ${t.id}` : t.id}
+              </Pill>
+            ))}
+          </ScrollView>
+          <View style={styles.transTapHint}>
+            {translations.map((t) => (
+              <Text
+                key={t.id}
+                onPress={() => handleSelectTranslation(t.id)}
+                style={[
+                  styles.transOption,
+                  t.id === selectedTranslation && styles.transOptionActive,
+                ]}
+              >
+                {t.name}
+              </Text>
+            ))}
+          </View>
+          <RedButton title="Search" icon="magnify" onPress={handleSearch} />
+          <Text style={styles.proTip}>
+            <Text style={styles.proTipBold}>Pro tip:</Text> Bookmark a verse while reading to keep it
+            synced across devices.
+          </Text>
+        </RpvCard>
+
+        {/* Quick Actions card */}
+        <RpvCard>
+          <Eyebrow>Quick Actions</Eyebrow>
+          <OutlineButton
+            title="Browse Books"
+            icon="book-open-variant"
+            onPress={() => navigation.navigate('Read')}
+          />
+          <OutlineButton
+            title="Daily Devotional"
+            icon="calendar"
+            onPress={() => navigation.navigate('Devotionals')}
+          />
+          <OutlineButton
+            title="AI Bible Search"
+            icon="creation"
+            onPress={() => navigation.navigate('BibleSearch')}
+          />
+        </RpvCard>
+
+        {/* Features — mirrors .rpv-feature-grid */}
+        <SectionHead
+          title="Discover Your Next Passage"
+          subtitle="Built with a modern, warm aesthetic for today's study habits."
+        />
+        {FEATURES.map((f) => (
+          <RpvCard key={f.title}>
+            <View style={styles.featureRow}>
+              <MaterialCommunityIcons name={f.icon} size={22} color={colors.red600} />
+              <Text style={styles.featureTitle}>{f.title}</Text>
+            </View>
+            <Text style={textStyles.body}>{f.body}</Text>
+          </RpvCard>
+        ))}
+
+        {/* Daily Devotional — replaces web's Featured Articles (Firestore-only) */}
+        <RpvCard>
+          <SectionHead
+            title="Daily Devotional"
+            subtitle="Today's reading from the RPV devotional feed."
+          />
+          {devotional ? (
+            <View>
+              <Text style={styles.devoTitle}>{devotional.title || 'Today'}</Text>
+              <Text style={textStyles.body} numberOfLines={4}>
+                {String(devotional.content || devotional.body || '')}
+              </Text>
+              <OutlineButton
+                title="Open Devotionals"
+                icon="calendar"
+                onPress={() => navigation.navigate('Devotionals')}
+                style={styles.devoButton}
+              />
+            </View>
+          ) : (
+            <OutlineButton
+              title="Open Devotionals"
+              icon="calendar"
+              onPress={() => navigation.navigate('Devotionals')}
+            />
+          )}
+        </RpvCard>
+
+        {user ? (
+          <Text style={styles.signedIn}>Signed in as {user.email}</Text>
+        ) : (
+          <OutlineButton
+            title="Sign In to Sync"
+            icon="login"
+            onPress={() => navigation.navigate('Settings')}
+          />
         )}
-
-        <Card style={styles.card}>
-          <Card.Content>
-            <View style={styles.cardHeader}>
-              <MaterialCommunityIcons name="magnify" size={24} color="#a9291c" />
-              <Text variant="titleMedium" style={styles.cardTitle}>
-                Quick Search
-              </Text>
-            </View>
-            <Text variant="bodySmall" style={styles.cardText}>
-              Find verses instantly across all translations
-            </Text>
-          </Card.Content>
-        </Card>
-
-        <Card style={styles.card}>
-          <Card.Content>
-            <View style={styles.cardHeader}>
-              <MaterialCommunityIcons name="book-open" size={24} color="#a9291c" />
-              <Text variant="titleMedium" style={styles.cardTitle}>
-                Read Bible
-              </Text>
-            </View>
-            <Text variant="bodySmall" style={styles.cardText}>
-              Read Scripture in multiple translations with offline support
-            </Text>
-          </Card.Content>
-        </Card>
-
-        <Card style={styles.card}>
-          <Card.Content>
-            <View style={styles.cardHeader}>
-              <MaterialCommunityIcons name="bookmark" size={24} color="#a9291c" />
-              <Text variant="titleMedium" style={styles.cardTitle}>
-                Bookmarks
-              </Text>
-            </View>
-            <Text variant="bodySmall" style={styles.cardText}>
-              Save your favorite verses {user ? 'and sync them' : 'locally'}
-            </Text>
-          </Card.Content>
-        </Card>
-
-        <Card style={styles.card}>
-          <Card.Content>
-            <View style={styles.cardHeader}>
-              <MaterialCommunityIcons name="wifi-off" size={24} color="#a9291c" />
-              <Text variant="titleMedium" style={styles.cardTitle}>
-                Offline Support
-              </Text>
-            </View>
-            <Text variant="bodySmall" style={styles.cardText}>
-              Read and search verses even without internet connection
-            </Text>
-          </Card.Content>
-        </Card>
       </View>
     </ScrollView>
   );
@@ -115,71 +293,125 @@ export default function HomeScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.cream,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  hero: {
+    backgroundColor: colors.navy900,
+    padding: spacing.lg,
+    paddingTop: spacing.xl,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
-  header: {
-    padding: 20,
-    backgroundColor: '#a9291c',
-    alignItems: 'center',
+  pillRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: spacing.md,
   },
-  title: {
-    color: '#fff',
-    fontWeight: 'bold',
+  heroBody: {
+    color: colors.lavSoft,
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: spacing.sm,
   },
-  subtitle: {
-    color: '#fff',
-    marginTop: 8,
+  heroForm: {
+    marginTop: spacing.lg,
+    gap: spacing.sm,
   },
-  userInfo: {
-    color: '#fff',
-    marginTop: 8,
-    opacity: 0.9,
+  heroInput: {
+    backgroundColor: colors.white,
+    borderRadius: radius.input,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: colors.ink,
+  },
+  heroButton: {
+    alignSelf: 'stretch',
+  },
+  strip: {
+    backgroundColor: colors.red700,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.md,
+  },
+  stripText: {
+    color: colors.white,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   content: {
-    padding: 16,
+    padding: spacing.md,
   },
-  card: {
-    marginBottom: 12,
+  searchInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.input,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: colors.ink,
+    marginBottom: spacing.sm,
   },
-  authCard: {
-    backgroundColor: '#fff3e0',
-    borderLeftWidth: 4,
-    borderLeftColor: '#a9291c',
-    marginBottom: 16,
+  transRow: {
+    flexDirection: 'row',
+    marginBottom: 4,
   },
-  authCardContent: {
-    alignItems: 'center',
+  transTapHint: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: spacing.sm,
   },
-  authCardTitle: {
-    marginTop: 12,
-    color: '#a9291c',
-    fontWeight: '600',
+  transOption: {
+    fontSize: 12,
+    color: colors.inkSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  authCardText: {
-    marginTop: 8,
-    color: '#666',
-    textAlign: 'center',
+  transOptionActive: {
+    color: colors.red600,
+    borderColor: colors.red600,
+    fontWeight: '700',
   },
-  cardHeader: {
+  proTip: {
+    marginTop: spacing.sm,
+    fontSize: 12,
+    color: colors.inkSoft,
+  },
+  proTipBold: {
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  featureRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    gap: 10,
+    marginBottom: 6,
   },
-  cardTitle: {
-    marginLeft: 12,
-    color: '#a9291c',
+  featureTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.ink,
   },
-  cardText: {
-    marginTop: 8,
-    color: '#666',
+  devoTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.ink,
+    marginBottom: 6,
   },
-  button: {
-    marginTop: 20,
-    backgroundColor: '#a9291c',
+  devoButton: {
+    marginTop: spacing.sm,
+    marginBottom: 0,
+  },
+  signedIn: {
+    textAlign: 'center',
+    color: colors.inkFaint,
+    fontSize: 12,
+    marginVertical: spacing.md,
   },
 });

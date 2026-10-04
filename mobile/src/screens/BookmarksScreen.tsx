@@ -1,34 +1,29 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
-import { Text, ActivityIndicator } from 'react-native-paper';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { colors, spacing } from '../theme';
+import { RpvCard, Loading, Empty } from '../components/Rpv';
 import { useAuthStore } from '../store/authStore';
 import { useBookmarkStore } from '../store/bookmarkStore';
 
 export default function BookmarksScreen(): React.ReactElement {
+  const navigation = useNavigation<any>();
   const { user } = useAuthStore();
   const { bookmarks, loading, error, loadBookmarks, removeBookmark } = useBookmarkStore();
 
   useEffect(() => {
-    if (user) {
-      loadBookmarks(user.uid);
-    }
+    if (user) loadBookmarks(user.uid);
   }, [user]);
 
-  const handleRemoveBookmark = (bookmarkId: string): void => {
+  const handleRemove = (bookmarkId: string): void => {
     if (!user) return;
-
-    Alert.alert('Remove Bookmark', 'Are you sure you want to remove this bookmark?', [
-      { text: 'Cancel', onPress: () => {} },
+    Alert.alert('Remove Bookmark', 'Remove this bookmark?', [
+      { text: 'Cancel', style: 'cancel' },
       {
         text: 'Remove',
-        onPress: async () => {
-          try {
-            await removeBookmark(user.uid, bookmarkId);
-          } catch (error: any) {
-            Alert.alert('Error', error.message);
-          }
-        },
+        style: 'destructive',
+        onPress: () => removeBookmark(user.uid, bookmarkId).catch((e: any) => Alert.alert('Error', e.message)),
       },
     ]);
   };
@@ -36,136 +31,69 @@ export default function BookmarksScreen(): React.ReactElement {
   if (!user) {
     return (
       <View style={styles.container}>
-        <View style={styles.emptyState}>
-          <MaterialCommunityIcons name="bookmark-outline" size={48} color="#ccc" />
-          <Text variant="bodyMedium" style={styles.emptyText}>
-            Sign in to save and sync bookmarks
-          </Text>
-        </View>
+        <Empty icon="bookmark-outline" message="Sign in to save and sync bookmarks." />
       </View>
     );
   }
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-
+  if (loading) return <Loading label="Loading bookmarks…" />;
   if (error) {
     return (
       <View style={styles.container}>
-        <View style={styles.emptyState}>
-          <Text variant="bodyMedium" style={styles.errorText}>
-            Error: {error}
-          </Text>
-        </View>
+        <Empty icon="alert-circle-outline" message={error} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      {bookmarks.length === 0 ? (
-        <View style={styles.emptyState}>
-          <MaterialCommunityIcons name="bookmark-outline" size={48} color="#ccc" />
-          <Text variant="bodyMedium" style={styles.emptyText}>
-            No bookmarks yet. Start bookmarking verses!
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={bookmarks}
-          keyExtractor={(item) => item.bookmarkId || item.id}
-          renderItem={({ item }) => (
-            <View style={styles.bookmarkItem}>
-              <View style={styles.bookmarkContent}>
-                <Text variant="titleSmall" style={styles.bookmarkTitle}>
+    <FlatList
+      style={styles.container}
+      data={bookmarks}
+      keyExtractor={(item) => item.bookmarkId || item.id}
+      contentContainerStyle={styles.list}
+      renderItem={({ item }) => (
+        <TouchableOpacity
+          onPress={() =>
+            navigation.navigate('Read', { book: item.book, chapter: item.chapter })
+          }
+        >
+          <RpvCard style={styles.item}>
+            <View style={styles.itemRow}>
+              <View style={styles.itemBody}>
+                <Text style={styles.ref}>
                   {item.book} {item.chapter}:{item.verse}
                 </Text>
-                <Text variant="bodySmall" style={styles.bookmarkText} numberOfLines={3}>
-                  {item.text}
-                </Text>
-                <Text variant="labelSmall" style={styles.bookmarkTranslation}>
-                  {item.translation}
-                </Text>
+                {item.text ? (
+                  <Text style={styles.text} numberOfLines={3}>
+                    {item.text}
+                  </Text>
+                ) : null}
+                <Text style={styles.trans}>{item.translation}</Text>
               </View>
               <TouchableOpacity
-                onPress={() => handleRemoveBookmark(item.bookmarkId || item.id)}
-                style={styles.deleteButton}
+                onPress={() => handleRemove(item.bookmarkId || item.id)}
+                style={styles.delete}
               >
-                <MaterialCommunityIcons name="delete" size={20} color="#a9291c" />
+                <MaterialCommunityIcons name="delete-outline" size={20} color={colors.red600} />
               </TouchableOpacity>
             </View>
-          )}
-          contentContainerStyle={styles.listContent}
-        />
+          </RpvCard>
+        </TouchableOpacity>
       )}
-    </View>
+      ListEmptyComponent={
+        <Empty icon="bookmark-outline" message="No bookmarks yet. Bookmark a verse while reading." />
+      }
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  emptyText: {
-    color: '#999',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  errorText: {
-    color: '#d32f2f',
-    textAlign: 'center',
-  },
-  listContent: {
-    padding: 12,
-    gap: 8,
-  },
-  bookmarkItem: {
-    backgroundColor: '#fff',
-    padding: 12,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#a9291c',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  bookmarkContent: {
-    flex: 1,
-    marginRight: 12,
-  },
-  bookmarkTitle: {
-    fontWeight: '600',
-    color: '#a9291c',
-    marginBottom: 4,
-  },
-  bookmarkText: {
-    color: '#333',
-    marginBottom: 8,
-    lineHeight: 20,
-  },
-  bookmarkTranslation: {
-    color: '#999',
-  },
-  deleteButton: {
-    padding: 8,
-  },
+  container: { flex: 1, backgroundColor: colors.cream },
+  list: { padding: spacing.md, paddingBottom: spacing.xl },
+  item: { borderLeftWidth: 4, borderLeftColor: colors.red600 },
+  itemRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  itemBody: { flex: 1, marginRight: 8 },
+  ref: { fontWeight: '700', color: colors.navy800, fontSize: 14, marginBottom: 4 },
+  text: { color: colors.inkSoft, fontSize: 13, lineHeight: 19, marginBottom: 6 },
+  trans: { color: colors.inkFaint, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  delete: { padding: 4 },
 });

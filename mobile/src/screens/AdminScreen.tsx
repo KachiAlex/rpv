@@ -1,242 +1,114 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
-import { Text, Card, Button, ActivityIndicator, Divider } from 'react-native-paper';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors, radius, spacing } from '../theme';
+import { RpvCard, Loading, Empty, textStyles } from '../components/Rpv';
 import { useAuthStore } from '../store/authStore';
 import { useAdminStore } from '../store/adminStore';
+
+const ADMIN_TOOLS = [
+  {
+    icon: 'file-document-outline' as const,
+    title: 'Blog Management',
+    body: 'Create, edit, and publish blog posts — manage via the web admin.',
+  },
+  {
+    icon: 'book-open-page-variant' as const,
+    title: 'Publication Management',
+    body: 'Manage Bible translations and publications at rpvbible.com/admin.',
+  },
+  {
+    icon: 'chart-line' as const,
+    title: 'Analytics',
+    body: 'View app usage and user statistics on the web dashboard.',
+  },
+  {
+    icon: 'account-multiple-outline' as const,
+    title: 'User Management',
+    body: 'Manage users and permissions on the web dashboard.',
+  },
+];
 
 export default function AdminScreen(): React.ReactElement {
   const { user } = useAuthStore();
   const { isAdmin, adminUser, loading, getAdminUser } = useAdminStore();
 
   useEffect(() => {
-    if (user) {
-      getAdminUser(user.uid);
-    }
+    if (user) getAdminUser(user.uid);
   }, [user]);
 
   if (!user) {
     return (
       <View style={styles.container}>
-        <View style={styles.emptyState}>
-          <MaterialCommunityIcons name="lock-outline" size={48} color="#ccc" />
-          <Text variant="bodyMedium" style={styles.emptyText}>
-            Sign in to access admin features
-          </Text>
-        </View>
+        <Empty icon="lock-outline" message="Sign in to access admin features." />
       </View>
     );
   }
-
+  if (loading) return <Loading label="Checking access…" />;
   if (!isAdmin) {
     return (
       <View style={styles.container}>
-        <View style={styles.emptyState}>
-          <MaterialCommunityIcons name="shield-alert-outline" size={48} color="#ccc" />
-          <Text variant="bodyMedium" style={styles.emptyText}>
-            You don't have admin access
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" />
+        <Empty icon="shield-alert-outline" message="You don't have admin access." />
       </View>
     );
   }
 
   return (
     <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <MaterialCommunityIcons name="shield-admin" size={32} color="#a9291c" />
-        <Text variant="headlineSmall" style={styles.title}>
-          Admin Dashboard
-        </Text>
-        <Text variant="bodySmall" style={styles.subtitle}>
-          {adminUser?.email}
-        </Text>
+      <View style={styles.hero}>
+        <View style={styles.shieldRow}>
+          <MaterialCommunityIcons name="shield-crown" size={26} color={colors.red600} />
+          <Text style={textStyles.heroTitle}>Admin Dashboard</Text>
+        </View>
+        <Text style={styles.heroSub}>{adminUser?.email || user.email}</Text>
       </View>
 
-      <View style={styles.content}>
-        <Card style={styles.card}>
-          <Card.Content>
-            <View style={styles.cardHeader}>
-              <MaterialCommunityIcons name="file-document" size={24} color="#a9291c" />
-              <Text variant="titleMedium" style={styles.cardTitle}>
-                Blog Management
-              </Text>
+      <View style={styles.pad}>
+        {ADMIN_TOOLS.map((tool) => (
+          <RpvCard key={tool.title}>
+            <View style={styles.row}>
+              <View style={styles.iconWrap}>
+                <MaterialCommunityIcons name={tool.icon} size={22} color={colors.red600} />
+              </View>
+              <View style={styles.itemBody}>
+                <Text style={styles.itemTitle}>{tool.title}</Text>
+                <Text style={textStyles.body}>{tool.body}</Text>
+              </View>
             </View>
-            <Text variant="bodySmall" style={styles.cardText}>
-              Create, edit, and publish blog posts
-            </Text>
-            <Button
-              mode="outlined"
-              onPress={() => Alert.alert('Blog Management', 'Blog management feature coming soon')}
-              style={styles.cardButton}
-            >
-              Manage Blogs
-            </Button>
-          </Card.Content>
-        </Card>
+          </RpvCard>
+        ))}
 
-        <Card style={styles.card}>
-          <Card.Content>
-            <View style={styles.cardHeader}>
-              <MaterialCommunityIcons name="book-open" size={24} color="#a9291c" />
-              <Text variant="titleMedium" style={styles.cardTitle}>
-                Publication Management
-              </Text>
-            </View>
-            <Text variant="bodySmall" style={styles.cardText}>
-              Manage Bible translations and publications
-            </Text>
-            <Button
-              mode="outlined"
-              onPress={() => Alert.alert('Publications', 'Publication management feature coming soon')}
-              style={styles.cardButton}
-            >
-              Manage Publications
-            </Button>
-          </Card.Content>
-        </Card>
-
-        <Card style={styles.card}>
-          <Card.Content>
-            <View style={styles.cardHeader}>
-              <MaterialCommunityIcons name="chart-line" size={24} color="#a9291c" />
-              <Text variant="titleMedium" style={styles.cardTitle}>
-                Analytics
-              </Text>
-            </View>
-            <Text variant="bodySmall" style={styles.cardText}>
-              View app usage and user statistics
-            </Text>
-            <Button
-              mode="outlined"
-              onPress={() => Alert.alert('Analytics', 'Analytics feature coming soon')}
-              style={styles.cardButton}
-            >
-              View Analytics
-            </Button>
-          </Card.Content>
-        </Card>
-
-        <Card style={styles.card}>
-          <Card.Content>
-            <View style={styles.cardHeader}>
-              <MaterialCommunityIcons name="account-multiple" size={24} color="#a9291c" />
-              <Text variant="titleMedium" style={styles.cardTitle}>
-                User Management
-              </Text>
-            </View>
-            <Text variant="bodySmall" style={styles.cardText}>
-              Manage users and permissions
-            </Text>
-            <Button
-              mode="outlined"
-              onPress={() => Alert.alert('Users', 'User management feature coming soon')}
-              style={styles.cardButton}
-            >
-              Manage Users
-            </Button>
-          </Card.Content>
-        </Card>
-
-        <Divider style={styles.divider} />
-
-        <View style={styles.section}>
-          <Text variant="titleSmall" style={styles.sectionTitle}>
-            Admin Info
-          </Text>
-          <Text variant="bodySmall" style={styles.infoText}>
-            Role: {adminUser?.role}
-          </Text>
-          <Text variant="bodySmall" style={styles.infoText}>
-            Email: {adminUser?.email}
-          </Text>
-        </View>
+        <RpvCard>
+          <Text style={styles.infoTitle}>Admin Info</Text>
+          <Text style={textStyles.body}>Role: {adminUser?.role || 'admin'}</Text>
+          <Text style={textStyles.body}>Email: {adminUser?.email || user.email}</Text>
+        </RpvCard>
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
+  container: { flex: 1, backgroundColor: colors.cream },
+  hero: {
+    backgroundColor: colors.navy900,
+    padding: spacing.lg,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
-  loadingContainer: {
-    flex: 1,
+  shieldRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  heroSub: { color: colors.lavSoft, fontSize: 13, marginTop: 6 },
+  pad: { padding: spacing.md },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  iconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.input,
+    backgroundColor: colors.red50,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  header: {
-    padding: 20,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  title: {
-    color: '#a9291c',
-    fontWeight: 'bold',
-    marginTop: 8,
-  },
-  subtitle: {
-    color: '#666',
-    marginTop: 4,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  emptyText: {
-    color: '#999',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  content: {
-    padding: 16,
-  },
-  card: {
-    marginBottom: 12,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  cardTitle: {
-    marginLeft: 12,
-    color: '#a9291c',
-  },
-  cardText: {
-    color: '#666',
-    marginBottom: 12,
-  },
-  cardButton: {
-    marginTop: 8,
-  },
-  divider: {
-    marginVertical: 16,
-  },
-  section: {
-    padding: 12,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-  },
-  sectionTitle: {
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  infoText: {
-    color: '#666',
-    marginBottom: 4,
-  },
+  itemBody: { flex: 1 },
+  itemTitle: { fontSize: 15, fontWeight: '700', color: colors.ink, marginBottom: 2 },
+  infoTitle: { fontSize: 14, fontWeight: '700', color: colors.ink, marginBottom: 6 },
 });
