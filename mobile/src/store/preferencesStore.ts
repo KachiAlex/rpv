@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import * as firebaseService from '../services/firebase';
+import * as apiService from '../services/api';
 import offlineQueueService from '../services/offlineQueueService';
 
 interface UserPreferences {
@@ -41,7 +41,7 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
   loadPreferences: async (userId: string) => {
     set({ loading: true, error: null });
     try {
-      const prefs = await firebaseService.getPreferences(userId);
+      const prefs = await apiService.getPreferences(userId);
       set({
         preferences: prefs || DEFAULT_PREFERENCES,
         loading: false,
@@ -56,7 +56,7 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const updated = { ...get().preferences, ...newPrefs };
-      await firebaseService.savePreferences(userId, updated);
+      await apiService.savePreferences(userId, updated);
       set({ preferences: updated, loading: false });
 
       // Queue for offline sync

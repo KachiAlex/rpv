@@ -1,16 +1,16 @@
 import { create } from 'zustand';
-import { User } from 'firebase/auth';
-import * as firebaseService from '../services/firebase';
+import { ApiUser } from '../services/api';
+import * as apiService from '../services/api';
 
 interface AuthState {
-  user: User | null;
+  user: ApiUser | null;
   loading: boolean;
   error: string | null;
   isAuthenticated: boolean;
   signUp: (email: string, password: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  setUser: (user: User | null) => void;
+  setUser: (user: ApiUser | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   initializeAuth: () => void;
@@ -25,7 +25,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   signUp: async (email: string, password: string) => {
     set({ loading: true, error: null });
     try {
-      const user = await firebaseService.signUp(email, password);
+      const user = await apiService.signUp(email, password);
       set({ user, isAuthenticated: !!user, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -36,7 +36,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   signIn: async (email: string, password: string) => {
     set({ loading: true, error: null });
     try {
-      const user = await firebaseService.signIn(email, password);
+      const user = await apiService.signIn(email, password);
       set({ user, isAuthenticated: !!user, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -47,7 +47,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     set({ loading: true, error: null });
     try {
-      await firebaseService.logout();
+      await apiService.logout();
       set({ user: null, isAuthenticated: false, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -55,7 +55,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  setUser: (user: User | null) => {
+  setUser: (user: ApiUser | null) => {
     set({ user, isAuthenticated: !!user });
   },
 
@@ -68,7 +68,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   initializeAuth: () => {
-    firebaseService.onAuthChange((user) => {
+    apiService.onAuthChange((user) => {
       set({ user, isAuthenticated: !!user });
     });
   },

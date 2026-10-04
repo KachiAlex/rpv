@@ -249,7 +249,7 @@ export default function RootNavigator(): React.ReactElement {
       <AuthStack.Navigator
         screenOptions={{
           headerShown: false,
-          animationEnabled: false,
+          animation: 'none',
         }}
       >
         <AuthStack.Screen name="Auth" component={AuthScreen} />

@@ -13,3 +13,8 @@ web-build/
 .env
 .env.local
 .env.*.local
+
+# Android generated project & signing
+android/
+*.keystore
+keystore.properties

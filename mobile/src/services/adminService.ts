@@ -1,4 +1,4 @@
-import * as firebaseService from './firebase';
+import * as apiService from './api';
 
 interface AdminUser {
   uid: string;
@@ -7,63 +7,37 @@ interface AdminUser {
   role: 'admin' | 'user';
 }
 
-export async function checkAdminStatus(userId: string): Promise<boolean> {
+export async function checkAdminStatus(_userId: string): Promise<boolean> {
   try {
-    const db = firebaseService.getDb();
-    const { doc, getDoc } = await import('firebase/firestore');
-    
-    const adminDoc = await getDoc(doc(db, 'admins', userId));
-    return adminDoc.exists();
+    return (await apiService.getUserRole()) === 'admin';
   } catch (error) {
     console.error('Error checking admin status:', error);
     return false;
   }
 }
 
-export async function getAdminUser(userId: string): Promise<AdminUser | null> {
+export async function getAdminUser(_userId: string): Promise<AdminUser | null> {
   try {
-    const db = firebaseService.getDb();
-    const { doc, getDoc } = await import('firebase/firestore');
-    
-    const adminDoc = await getDoc(doc(db, 'admins', userId));
-    if (adminDoc.exists()) {
-      return {
-        uid: userId,
-        ...adminDoc.data(),
-      } as AdminUser;
-    }
-    return null;
+    const user = apiService.getCurrentUser();
+    if (!user) return null;
+    const role = await apiService.getUserRole();
+    if (role !== 'admin') return null;
+    return {
+      uid: user.uid,
+      email: user.email,
+      isAdmin: true,
+      role: 'admin',
+    };
   } catch (error) {
     console.error('Error getting admin user:', error);
     return null;
   }
 }
 
-export async function createAdminUser(userId: string, email: string): Promise<void> {
-  try {
-    const db = firebaseService.getDb();
-    const { doc, setDoc } = await import('firebase/firestore');
-    
-    await setDoc(doc(db, 'admins', userId), {
-      email,
-      isAdmin: true,
-      role: 'admin',
-      createdAt: new Date(),
-    });
-  } catch (error) {
-    console.error('Error creating admin user:', error);
-    throw error;
-  }
+export async function createAdminUser(_userId: string, _email: string): Promise<void> {
+  throw new Error('Admin management is handled in the web admin panel');
 }
 
-export async function removeAdminUser(userId: string): Promise<void> {
-  try {
-    const db = firebaseService.getDb();
-    const { doc, deleteDoc } = await import('firebase/firestore');
-    
-    await deleteDoc(doc(db, 'admins', userId));
-  } catch (error) {
-    console.error('Error removing admin user:', error);
-    throw error;
-  }
+export async function removeAdminUser(_userId: string): Promise<void> {
+  throw new Error('Admin management is handled in the web admin panel');
 }

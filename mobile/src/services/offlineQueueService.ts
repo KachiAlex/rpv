@@ -97,10 +97,10 @@ class OfflineQueueService {
   /**
    * Queue preference update
    */
-  async queuePreferenceUpdate(key: string, value: string): Promise<string> {
+  async queuePreferenceUpdate(userId: string, preferences: object): Promise<string> {
     return this.queueAction('preference_update', {
-      key,
-      value,
+      userId,
+      preferences,
       timestamp: Date.now(),
     });
   }

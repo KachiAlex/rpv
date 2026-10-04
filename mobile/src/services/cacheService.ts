@@ -146,7 +146,7 @@ class CacheService {
 
       sql += ` LIMIT 50`;
 
-      const results = await db.getAllAsync(sql, params);
+      const results = await db.getAllAsync<SearchResult>(sql, params);
       return results;
     } catch (error) {
       console.error('Error searching cached verses:', error);
@@ -159,7 +159,7 @@ class CacheService {
    */
   async getCachedVerses(translation: string): Promise<SearchResult[]> {
     try {
-      const results = await db.getAllAsync(
+      const results = await db.getAllAsync<SearchResult>(
         `SELECT * FROM verses WHERE translation = ? ORDER BY book, chapter, verse`,
         [translation]
       );

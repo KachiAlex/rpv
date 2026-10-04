@@ -1,6 +1,12 @@
-import * as SQLite from 'expo-sqlite';
+import * as SQLite from 'expo-sqlite/next';
 
 const db = SQLite.openDatabaseSync('rpv_bible.db');
+
+// Re-export the raw async API — other services import * as db from './database'
+// and call db.runAsync / db.getAllAsync / db.getFirstAsync directly.
+export const runAsync: SQLite.SQLiteDatabase['runAsync'] = db.runAsync.bind(db);
+export const getAllAsync: SQLite.SQLiteDatabase['getAllAsync'] = db.getAllAsync.bind(db);
+export const getFirstAsync: SQLite.SQLiteDatabase['getFirstAsync'] = db.getFirstAsync.bind(db);
 
 // Database version for migrations
 const DB_VERSION = 1;
@@ -230,7 +236,7 @@ export async function savePreference(key: string, value: string): Promise<void> 
 
 export async function getPreference(key: string): Promise<string | null> {
   try {
-    const result = await db.getFirstAsync(
+    const result = await db.getFirstAsync<{ value: string }>(
       `SELECT value FROM preferences WHERE key = ?`,
       [key]
     );
@@ -310,62 +316,5 @@ export async function markQueueItemSynced(id: string): Promise<void> {
   } catch (error) {
     console.error('Error marking queue item synced:', error);
     throw error;
-  }
-}
-
-/**
- * Get database statistics
- */
-export async function getDatabaseStats(): Promise<{
-  verseCount: number;
-  translationCount: number;
-  bookmarkCount: number;
-  queuedChanges: number;
-}> {
-  try {
-    const verseCount = await db.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) as count FROM verses'
-    );
-    const translationCount = await db.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) as count FROM translations WHERE isDownloaded = 1'
-    );
-    const bookmarkCount = await db.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) as count FROM bookmarks'
-    );
-    const queuedChanges = await db.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) as count FROM offline_queue WHERE synced = 0'
-    );
-
-    return {
-      verseCount: verseCount?.count || 0,
-      translationCount: translationCount?.count || 0,
-      bookmarkCount: bookmarkCount?.count || 0,
-      queuedChanges: queuedChanges?.count || 0,
-    };
-  } catch (error) {
-    console.error('Error getting database stats:', error);
-    return {
-      verseCount: 0,
-      translationCount: 0,
-      bookmarkCount: 0,
-      queuedChanges: 0,
-    };
-  }
-}
-
-/**
- * Clear old cached verses (older than specified days)
- */
-export async function clearOldCache(daysOld: number = 30): Promise<number> {
-  try {
-    const cutoffTime = Date.now() - daysOld * 24 * 60 * 60 * 1000;
-    const result = await db.runAsync(
-      'DELETE FROM verses WHERE timestamp < ?',
-      [cutoffTime]
-    );
-    return result.changes || 0;
-  } catch (error) {
-    console.error('Error clearing old cache:', error);
-    return 0;
   }
 }

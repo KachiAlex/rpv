@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { SearchResult } from '../services/searchService';
-import * as firebaseService from '../services/firebase';
+import * as apiService from '../services/api';
 import offlineQueueService from '../services/offlineQueueService';
 
 interface BookmarkItem extends SearchResult {
@@ -36,13 +36,13 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
         translation: verse.translation,
       };
 
-      // Save to Firebase
-      await firebaseService.saveBookmark(userId, verse.id, verseData);
+      // Save to the RPV API
+      const serverId = await apiService.saveBookmark(userId, verse.id, verseData);
 
       // Add to local state
       const newBookmark: BookmarkItem = {
         ...verse,
-        bookmarkId: `${userId}-${verse.id}`,
+        bookmarkId: String(serverId ?? `${userId}-${verse.id}`),
         createdAt: new Date(),
       };
 
@@ -59,6 +59,8 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
   removeBookmark: async (userId: string, bookmarkId: string) => {
     set({ loading: true, error: null });
     try {
+      await apiService.removeBookmark(bookmarkId);
+
       // Remove from local state
       set({
         bookmarks: get().bookmarks.filter((b) => b.bookmarkId !== bookmarkId),
@@ -76,7 +78,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
   loadBookmarks: async (userId: string) => {
     set({ loading: true, error: null });
     try {
-      const bookmarks = await firebaseService.getBookmarks(userId);
+      const bookmarks = await apiService.getBookmarks(userId);
       set({ bookmarks: bookmarks as BookmarkItem[], loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
