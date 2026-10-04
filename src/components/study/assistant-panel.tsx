@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from 'react';
+import { getApiUrl } from '@/lib/api-config';
 
 interface AssistantResponseDto {
   answer: string;
@@ -34,7 +35,7 @@ export function AssistantPanel() {
     setError(null);
 
     try {
-      const res = await fetch('/api/assistant', {
+      const res = await fetch(getApiUrl('/api/assistant/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: query }),

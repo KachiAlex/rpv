@@ -8,7 +8,7 @@ import type { BlogPost } from '../../../lib/types';
 
 export default function BlogPostClient() {
   const params = useParams();
-  const slug = params.slug as string;
+  const slug = (params?.slug as string) ?? '';
   
   const [post, setPost] = useState<BlogPost | null>(null);
   const [isLoading, setIsLoading] = useState(true);

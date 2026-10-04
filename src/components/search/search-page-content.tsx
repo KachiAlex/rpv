@@ -55,6 +55,7 @@ export default function SearchPageContent() {
 
   // Initialize from URL parameters
   useEffect(() => {
+    if (!searchParams) return;
     const urlQuery = searchParams.get('q') || '';
     const urlTranslation = searchParams.get('translation') || '';
     const urlTestament = searchParams.get('testament') as 'all' | 'old' | 'new' || 'all';

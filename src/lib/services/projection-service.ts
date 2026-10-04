@@ -35,19 +35,35 @@ export class ProjectionService {
   }
 
   subscribeToChannel(channelId: string, callback: (ref: ProjectorRef | null) => void): () => void {
-    // Use Firestore for real-time subscriptions
-    const { FirestoreRepository } = require('../repositories/firestore-repository');
-    const repository = new FirestoreRepository();
-    
-    // Also cache locally when updates come in
-    const wrappedCallback = (ref: ProjectorRef | null) => {
-      if (ref) {
-        this.cacheManager.saveProjectionChannel(channelId, ref).catch(() => {});
+    // Use localStorage for projector channel sync
+    if (typeof window === 'undefined') return () => {};
+
+    const read = () => {
+      try {
+        const raw = localStorage.getItem(`rpv:projector:${channelId}`);
+        if (raw) {
+          const ref = JSON.parse(raw) as ProjectorRef;
+          this.cacheManager.saveProjectionChannel(channelId, ref).catch(() => {});
+          callback(ref);
+        } else {
+          callback(null);
+        }
+      } catch {
+        callback(null);
       }
-      callback(ref);
     };
-    
-    return repository.subscribeToProjectionChannel(channelId, wrappedCallback);
+
+    read();
+    const handler = (e: StorageEvent) => {
+      if (e.key === `rpv:projector:${channelId}`) {
+        read();
+      }
+    };
+    window.addEventListener('storage', handler);
+
+    return () => {
+      window.removeEventListener('storage', handler);
+    };
   }
 
   async getChannel(channelId: string): Promise<ProjectorRef | null> {

@@ -9,12 +9,11 @@ import {
 
 describe('Mobile Readability Tests', () => {
   // Property 18: Mobile contrast compliance
-  test.prop([
-    fc.tuple(
-      fc.hexaString({ minLength: 6, maxLength: 6 }),
-      fc.hexaString({ minLength: 6, maxLength: 6 })
-    ),
-  ])('should calculate valid contrast ratios', ([fg, bg]) => {
+  const hexDigit = fc.constantFrom('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f');
+  const hexColor = fc.array(hexDigit, { minLength: 6, maxLength: 6 }).map((digits) => digits.join(''));
+
+  test.prop([fc.tuple(hexColor, hexColor)])(
+    'should calculate valid contrast ratios', ([fg, bg]) => {
     const ratio = getContrastRatio(`#${fg}`, `#${bg}`);
     expect(typeof ratio).toBe('number');
     expect(ratio).toBeGreaterThan(0);

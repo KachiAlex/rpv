@@ -9,6 +9,7 @@ import { HighlightService } from '@/lib/services/highlight-service';
 import { ReadingProgressService } from '@/lib/services/reading-progress-service';
 import { useBibleStore } from '@/lib/store';
 import { EditBookmarkForm } from './components/edit-bookmark-form';
+import { ChangePasswordForm } from './components/change-password-form';
 import type { Highlight } from '@/lib/types';
 
 function AccountPageContent() {
@@ -572,6 +573,11 @@ function AccountPageContent() {
                 placeholder="en"
               />
             </div>
+          </div>
+
+          <div className="mt-8 pt-8 border-t">
+            <h3 className="text-lg font-semibold mb-4">Change Password</h3>
+            <ChangePasswordForm />
           </div>
         </div>
       )}

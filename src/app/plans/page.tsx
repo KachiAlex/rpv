@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { ProtectedRoute } from '@/components/auth/protected-route';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { ReadingPlanService } from '@/lib/services/reading-plan-service';
@@ -15,7 +15,7 @@ function ReadingPlansContent() {
   const { translations, current, setCurrent } = useBibleStore();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const planId = searchParams.get('planId');
+  const planId = searchParams?.get('planId');
   const [plans, setPlans] = useState<ReadingPlan[]>([]);
   const [userProgress, setUserProgress] = useState<UserReadingPlanProgress[]>([]);
   const [loading, setLoading] = useState(true);
@@ -349,7 +349,9 @@ function ReadingPlansContent() {
 export default function ReadingPlansPage() {
   return (
     <ProtectedRoute>
-      <ReadingPlansContent />
+      <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div></div>}>
+        <ReadingPlansContent />
+      </Suspense>
     </ProtectedRoute>
   );
 }

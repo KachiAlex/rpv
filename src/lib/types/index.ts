@@ -1,6 +1,6 @@
 export type Verse = { number: number; text: string };
 export type Chapter = { number: number; verses: Verse[] };
-export type Book = { name: string; chapters: Chapter[]; published?: boolean };
+export type Book = { name: string; chapters: Chapter[]; published?: boolean; introduction?: string };
 export type Translation = { 
   id: string; 
   name: string; 

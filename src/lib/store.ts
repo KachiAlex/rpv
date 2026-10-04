@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { TranslationService } from './services/translation-service';
+import { HybridTranslationService } from './services/hybrid-translation-service';
 import { ProjectionService } from './services/projection-service';
 import type { Translation, Reference, ProjectorRef } from './types';
 
@@ -29,15 +29,19 @@ type BibleState = {
   
   // Book Publication Management Actions
   toggleBookPublicationStatus: (translationId: string, bookName: string) => Promise<boolean>;
+  publishBook: (translationId: string, bookName: string) => Promise<void>;
+  unpublishBook: (translationId: string, bookName: string) => Promise<void>;
+  deleteBook: (translationId: string, bookName: string) => Promise<void>;
   bulkUpdateBookPublicationStatus: (translationId: string, bookUpdates: Array<{ bookName: string; published: boolean }>) => Promise<void>;
   getTranslationsWithPublishedBooks: () => Promise<Translation[]>;
+  updateBookIntroduction: (translationId: string, bookName: string, introduction: string) => Promise<void>;
   
   // NEW: Get translations filtered for end users (only published books)
   getTranslationsForEndUsers: () => Translation[];
   loadTranslationsForEndUsers: () => Promise<void>;
   
   // Internal
-  _translationService: TranslationService;
+  _translationService: HybridTranslationService;
   _projectionService: ProjectionService;
   _unsubscribers: { translations?: () => void; channel?: () => void };
 };
@@ -63,7 +67,7 @@ const PERMANENT_RPV: Translation = {
 };
 
 export const useBibleStore = create<BibleState>((set, get) => {
-  const translationService = new TranslationService();
+  const translationService = new HybridTranslationService();
   const projectionService = new ProjectionService();
 
   return {
@@ -102,8 +106,7 @@ export const useBibleStore = create<BibleState>((set, get) => {
                 // Use existing RPV from store
                 return [rpvFromStore, ...existingTranslations.filter(t => t.id !== 'RPV')];
               } else {
-                // Create new RPV translation
-                await translationService.saveTranslation(PERMANENT_RPV);
+                // Add RPV locally — do NOT write an empty manifest to the backend
                 return [PERMANENT_RPV, ...existingTranslations];
               }
             } catch (error) {
@@ -112,12 +115,28 @@ export const useBibleStore = create<BibleState>((set, get) => {
               return [PERMANENT_RPV, ...existingTranslations];
             }
           } else {
-            // RPV exists, but ensure it has the correct name
+            // RPV exists, but ensure it has the correct name and books
             const rpvIndex = existingTranslations.findIndex(t => t.id === 'RPV');
             if (rpvIndex >= 0) {
               const updated = [...existingTranslations];
+              const rpv = updated[rpvIndex];
+              // If RPV has no books, try to fetch them from the backend
+              if (!rpv.books || rpv.books.length === 0) {
+                try {
+                  const rpvWithBooks = await translationService.getTranslationLazy('RPV', false);
+                  if (rpvWithBooks && rpvWithBooks.books && rpvWithBooks.books.length > 0) {
+                    updated[rpvIndex] = {
+                      ...rpvWithBooks,
+                      name: 'Redemption Project Version'
+                    };
+                    return updated;
+                  }
+                } catch (error) {
+                  console.warn('[BibleStore] Could not fetch RPV books from backend:', error);
+                }
+              }
               updated[rpvIndex] = {
-                ...updated[rpvIndex],
+                ...rpv,
                 name: 'Redemption Project Version'
               };
               return updated;
@@ -141,7 +160,7 @@ export const useBibleStore = create<BibleState>((set, get) => {
                   const data = await res.json();
                   const list = (data?.translations ?? []) as Translation[];
                   if (Array.isArray(list) && list.length > 0) {
-                    // Load seeds locally without writing to Firestore (to avoid permission/write errors)
+                    // Load seeds locally without writing to backend
                     for (const t of list) {
                       loaded.push(t);
                     }
@@ -179,7 +198,7 @@ export const useBibleStore = create<BibleState>((set, get) => {
                 const data = await res.json();
                 const list = (data?.translations ?? []) as Translation[];
                 for (const t of list) {
-                  // Do not write seeds to Firestore; keep local
+                  // Do not write seeds to local storage; keep local
                   newlyLoaded.push(t);
                 }
               }
@@ -202,16 +221,14 @@ export const useBibleStore = create<BibleState>((set, get) => {
           });
         }
 
-        // Subscribe to real-time updates from Firestore
+        // Subscribe to updates from backend (R2 via HybridTranslationService)
         try {
-          const { db } = await import('./firebase').then(m => m.getFirebase());
-          if (db) {
-            const unsubscribe = translationService.subscribeToAllTranslations(async (incoming) => {
+            const unsubscribe = translationService.subscribeToAllTranslations(async (incoming: Translation[]) => {
               const state = get();
               const existing = Array.isArray(state.translations) ? state.translations : [];
               const incomingArray = Array.isArray(incoming) ? incoming : [];
 
-              // If we have incoming data, always use it (it's from Firestore, the source of truth)
+              // If we have incoming data, always use it
               if (incomingArray.length > 0) {
                 const byId = new Map<string, typeof incomingArray[number] | typeof existing[number]>();
                 const sizeOf = (t: Translation | undefined) => {
@@ -235,12 +252,40 @@ export const useBibleStore = create<BibleState>((set, get) => {
                     }
                   }
                 }
-                // Always prefer incoming (Firestore) data for metadata updates
+                // Always prefer incoming data for metadata updates
                 for (const t of incomingArray) {
                   if (t && t.id) {
                     const prev = byId.get(t.id) as Translation | undefined;
-                    // Prefer incoming for metadata, but keep existing if it has more content
-                    if (!prev || sizeOf(t) >= sizeOf(prev) || (t as any)._isMetadataOnly) {
+                    if (!prev) {
+                      byId.set(t.id, t);
+                    } else if ((t as any)._isMetadataOnly) {
+                      // Incoming is metadata-only: merge metadata (book names, published status)
+                      // but preserve existing loaded chapter/verse content
+                      const existingBooksMap = new Map<string, typeof prev.books[number]>();
+                      if (prev.books) {
+                        for (const b of prev.books) {
+                          existingBooksMap.set(b.name, b);
+                        }
+                      }
+                      const mergedBooks = (t.books || []).map(metaBook => {
+                        const existingBook = existingBooksMap.get(metaBook.name);
+                        if (existingBook && existingBook.chapters && existingBook.chapters.length > 0) {
+                          // Keep existing content, update metadata fields
+                          return {
+                            ...existingBook,
+                            published: metaBook.published,
+                            introduction: metaBook.introduction ?? existingBook.introduction,
+                          };
+                        }
+                        // No existing content, use metadata-only book
+                        return metaBook;
+                      });
+                      byId.set(t.id, {
+                        ...t,
+                        name: t.name || prev.name,
+                        books: mergedBooks,
+                      });
+                    } else if (sizeOf(t) >= sizeOf(prev)) {
                       byId.set(t.id, t);
                     }
                   }
@@ -257,16 +302,34 @@ export const useBibleStore = create<BibleState>((set, get) => {
                       if (rpvFromStore) {
                         return [rpvFromStore, ...translations];
                       } else {
-                        await translationService.saveTranslation(PERMANENT_RPV);
                         return [PERMANENT_RPV, ...translations];
                       }
                     } catch {
                       return [PERMANENT_RPV, ...translations];
                     }
                   } else {
-                    // Ensure RPV has correct name and is at the beginning
+                    // Ensure RPV has correct name, books, and is at the beginning
                     const rpvIndex = translations.findIndex(t => t.id === 'RPV');
                     const updated = [...translations];
+                    const rpv = updated[rpvIndex];
+                    // If RPV has no books, try to fetch from backend
+                    if (rpv && (!rpv.books || rpv.books.length === 0)) {
+                      try {
+                        const rpvWithBooks = await translationService.getTranslationLazy('RPV', false);
+                        if (rpvWithBooks && rpvWithBooks.books && rpvWithBooks.books.length > 0) {
+                          if (rpvIndex > 0) {
+                            updated.splice(rpvIndex, 1);
+                            updated[0] = { ...rpvWithBooks, name: 'Redemption Project Version' };
+                            return [updated[0], ...updated.slice(1)];
+                          } else {
+                            updated[0] = { ...rpvWithBooks, name: 'Redemption Project Version' };
+                            return updated;
+                          }
+                        }
+                      } catch {
+                        // Fall through to default handling
+                      }
+                    }
                     if (rpvIndex > 0) {
                       const rpv = updated.splice(rpvIndex, 1)[0];
                       updated[0] = { ...rpv, name: 'Redemption Project Version' };
@@ -280,7 +343,11 @@ export const useBibleStore = create<BibleState>((set, get) => {
                 };
                 
                 const finalMerged = await ensureRPVInMerged(merged);
-                set({ translations: finalMerged, current: state.current ?? finalMerged[0] ?? null });
+                // Update current to reflect the latest merged data (preserves loaded book content)
+                const updatedCurrent = state.current
+                  ? finalMerged.find(t => t.id === state.current!.id) ?? finalMerged[0] ?? null
+                  : finalMerged[0] ?? null;
+                set({ translations: finalMerged, current: updatedCurrent });
               }
             });
             
@@ -289,9 +356,8 @@ export const useBibleStore = create<BibleState>((set, get) => {
               unsubscribers.translations();
             }
             unsubscribers.translations = unsubscribe;
-          }
         } catch (error) {
-          console.warn('Firestore subscription failed, using cached data:', error);
+          console.warn('Backend subscription failed, using cached data:', error);
         }
       } catch (error) {
         console.error('Error loading translations:', error);
@@ -301,6 +367,36 @@ export const useBibleStore = create<BibleState>((set, get) => {
         });
         // Fallback to sample data
         await get().loadSample();
+      }
+    },
+
+    updateBookIntroduction: async (translationId: string, bookName: string, introduction: string) => {
+      try {
+        console.log('[BibleStore] Updating book introduction:', bookName, 'in translation:', translationId);
+        const { _translationService } = get();
+        await _translationService.updateBookIntroduction(translationId, bookName, introduction);
+
+        const state = get();
+        const updatedTranslations = state.translations.map((translation) => {
+          if (translation.id !== translationId) return translation;
+          return {
+            ...translation,
+            books: translation.books.map((book) =>
+              book.name === bookName ? { ...book, introduction } : book
+            ),
+          };
+        });
+
+        set({
+          translations: updatedTranslations,
+          current:
+            state.current?.id === translationId
+              ? updatedTranslations.find((t) => t.id === translationId) || state.current
+              : state.current,
+        });
+      } catch (error) {
+        console.error('Error updating book introduction:', error);
+        throw error;
       }
     },
 
@@ -423,7 +519,6 @@ export const useBibleStore = create<BibleState>((set, get) => {
           if (rpvFromStore) {
             set({ translations: [rpvFromStore, SAMPLE], current: rpvFromStore });
           } else {
-            await translationService.saveTranslation(PERMANENT_RPV);
             set({ translations: [PERMANENT_RPV, SAMPLE], current: PERMANENT_RPV });
           }
         } catch {
@@ -449,28 +544,33 @@ export const useBibleStore = create<BibleState>((set, get) => {
     },
 
     sendToProjector: async (ref) => {
-      try {
-        const { current, channelId } = get();
-        if (!current) return;
+      const { current, channelId } = get();
+      if (!current) return;
 
+      try {
         await projectionService.sendToProjector(channelId || 'default', ref);
       } catch (error) {
         console.error('Error sending to projector:', error);
-        // Fallback to localStorage for demo
-        const { current, channelId } = get();
-        if (current && typeof window !== 'undefined') {
-          const book = current.books.find((b) => b.name === ref.book);
-          const chapter = book?.chapters.find((c) => c.number === ref.chapter);
-          const verse = chapter?.verses.find((v) => v.number === ref.verse);
-          const payload: ProjectorRef = {
+        // Fallback to localStorage for demo-only environments
+        try {
+          const payload = {
             translation: current.name,
             book: ref.book,
             chapter: ref.chapter,
             verse: ref.verse,
-            text: verse?.text ?? '',
+            text:
+              current.books
+                .find((book) => book.name === ref.book)
+                ?.chapters.find((chapter) => chapter.number === ref.chapter)
+                ?.verses.find((verse) => verse.number === ref.verse)?.text ?? '',
+            timestamp: new Date().toISOString(),
           };
-          localStorage.setItem(`rpv:projector:${channelId || 'default'}`, JSON.stringify(payload));
-          window.dispatchEvent(new StorageEvent('storage', { key: `rpv:projector:${channelId || 'default'}` }));
+
+          const storageKey = `rpv:projector:${channelId || 'default'}`;
+          localStorage.setItem(storageKey, JSON.stringify(payload));
+          window.dispatchEvent(new StorageEvent('storage', { key: storageKey }));
+        } catch {
+          // Ignore fallback failures
         }
       }
     },
@@ -495,29 +595,7 @@ export const useBibleStore = create<BibleState>((set, get) => {
         console.warn('Error loading initial channel data:', error);
       }
 
-      // Check Firebase availability
-      const { getFirebase } = require('./firebase');
-      const { db } = getFirebase();
-      
-      if (db) {
-        try {
-          // Use Firestore
-          const unsubscribe = _projectionService.subscribeToChannel(channel, (ref) => {
-            if (ref) {
-              set({ projectorRef: ref });
-            } else {
-              // If ref is null, clear the projector
-              set({ projectorRef: { translation: '', book: '', chapter: 0, verse: 0, text: '' } });
-            }
-          });
-          unsubscribers.channel = unsubscribe;
-          return;
-        } catch (error) {
-          console.error('Error subscribing to Firestore channel:', error);
-        }
-      }
-      
-      // Fallback to localStorage
+      // Use localStorage for projector channel sync
       if (typeof window === 'undefined') return;
       
       const read = () => {
@@ -598,7 +676,7 @@ export const useBibleStore = create<BibleState>((set, get) => {
         const { _translationService } = get();
         await _translationService.addOrUpdateVerse(translationId, book, chapter, verse, text);
         
-        // Refresh translations from Firestore
+        // Refresh translations from backend
         await get().loadTranslations();
       } catch (error) {
         console.error('Error adding/updating verse:', error);
@@ -641,14 +719,82 @@ export const useBibleStore = create<BibleState>((set, get) => {
       }
     },
 
-    bulkUpdateBookPublicationStatus: async (translationId: string, bookUpdates: Array<{ bookName: string; published: boolean }>) => {
+    publishBook: async (translationId: string, bookName: string) => {
+      console.log('[BibleStore] Publishing book:', bookName, 'in translation:', translationId);
+      await get()._translationService.publishBook(translationId, bookName);
+      const state = get();
+      const updatedTranslations = state.translations.map(t => {
+        if (t.id === translationId) {
+          return {
+            ...t,
+            books: t.books.map(b => b.name === bookName ? { ...b, published: true } : b)
+          };
+        }
+        return t;
+      });
+
+      set({
+        translations: updatedTranslations,
+        current: state.current?.id === translationId
+          ? updatedTranslations.find(t => t.id === translationId) || state.current
+          : state.current
+      });
+    },
+
+    unpublishBook: async (translationId: string, bookName: string) => {
+      console.log('[BibleStore] Unpublishing book:', bookName, 'in translation:', translationId);
+      await get()._translationService.unpublishBook(translationId, bookName);
+      const state = get();
+      const updatedTranslations = state.translations.map(t => {
+        if (t.id === translationId) {
+          return {
+            ...t,
+            books: t.books.map(b => b.name === bookName ? { ...b, published: false } : b)
+          };
+        }
+        return t;
+      });
+
+      set({
+        translations: updatedTranslations,
+        current: state.current?.id === translationId
+          ? updatedTranslations.find(t => t.id === translationId) || state.current
+          : state.current
+      });
+    },
+
+    deleteBook: async (translationId: string, bookName: string) => {
+      console.log('[BibleStore] Deleting book:', bookName, 'from translation:', translationId);
+      await get()._translationService.deleteBook(translationId, bookName);
+      const state = get();
+      const updatedTranslations = state.translations.map(t => {
+        if (t.id === translationId) {
+          return {
+            ...t,
+            books: t.books.filter(b => b.name !== bookName)
+          };
+        }
+        return t;
+      });
+
+      set({
+        translations: updatedTranslations,
+        current: state.current?.id === translationId
+          ? updatedTranslations.find(t => t.id === translationId) || state.current
+          : state.current
+      });
+    },
+
+    bulkUpdateBookPublicationStatus: async (
+      translationId: string,
+      bookUpdates: Array<{ bookName: string; published: boolean }>
+    ) => {
       try {
-        console.log('[BibleStore] Bulk updating book publication status for translation:', translationId, 'updates:', bookUpdates.length);
-        
+        console.log('[BibleStore] Bulk updating book publication status:', translationId, bookUpdates.length);
+
         const { _translationService } = get();
         await _translationService.bulkUpdateBookPublicationStatus(translationId, bookUpdates);
-        
-        // Update local state immediately for responsive UI
+
         const state = get();
         const updatedTranslations = state.translations.map(t => {
           if (t.id === translationId) {
@@ -660,14 +806,14 @@ export const useBibleStore = create<BibleState>((set, get) => {
           }
           return t;
         });
-        
-        set({ 
+
+        set({
           translations: updatedTranslations,
-          current: state.current?.id === translationId 
+          current: state.current?.id === translationId
             ? updatedTranslations.find(t => t.id === translationId) || state.current
-            : state.current
+            : state.current,
         });
-        
+
         console.log('[BibleStore] Successfully completed bulk book publication status update');
       } catch (error) {
         console.error('Error in bulk book publication status update:', error);

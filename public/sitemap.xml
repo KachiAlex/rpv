@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://rpvbible.com/</loc>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://rpvbible.com/read</loc>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://rpvbible.com/bible-search</loc>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://rpvbible.com/projector</loc>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://rpvbible.com/study</loc>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://rpvbible.com/devotionals</loc>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://rpvbible.com/plans</loc>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://rpvbible.com/blog</loc>
+    <changefreq>weekly</changefreq>
+  </url>
+</urlset>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import { getApiUrl } from '@/lib/api-config';
 
 interface DevotionalEntryDto {
   id: string;
@@ -31,7 +32,7 @@ export function DevotionalPanel() {
     setLoading(true);
     setError(null);
 
-    fetch(`/api/devotionals?date=${date}`)
+    fetch(getApiUrl(`/api/devotionals/?date=${date}`))
       .then(async (res) => {
         if (res.status === 404) {
           setEntry(null);

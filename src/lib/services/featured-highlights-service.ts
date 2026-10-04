@@ -1,19 +1,6 @@
-import {
-  collection,
-  doc,
-  getDoc,
-  setDoc,
-  deleteDoc,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  limit,
-  Timestamp,
-  writeBatch,
-} from 'firebase/firestore';
-import { getFirebase } from '../firebase';
 import type { Translation } from '../types';
+import { getApiUrl } from '../api-config';
+import { getAuthToken } from '../client-auth';
 
 export interface FeaturedHighlight {
   id: string;
@@ -29,120 +16,104 @@ export interface FeaturedHighlight {
   updatedAt: Date;
 }
 
+async function apiCall<T = unknown>(path: string, options?: RequestInit): Promise<T> {
+  const token = await getAuthToken();
+  const res = await fetch(getApiUrl(path), {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options?.headers || {}),
+    },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error((data as any).error || 'Request failed');
+  return data as T;
+}
+
+function mapRow(row: any): FeaturedHighlight {
+  return {
+    id: row.id,
+    translationId: row.translation_id,
+    book: row.book,
+    chapter: row.chapter,
+    verse: row.verse,
+    text: row.text,
+    title: row.title,
+    description: row.description,
+    order: row.order,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  };
+}
+
 export class FeaturedHighlightsService {
-  private getDb() {
-    const { db } = getFirebase();
-    if (!db) {
-      throw new Error('Firebase not initialized');
-    }
-    return db;
-  }
-
-  async getFeaturedHighlights(limit_count: number = 5): Promise<FeaturedHighlight[]> {
-    const db = this.getDb();
-    const q = query(
-      collection(db, 'featured-highlights'),
-      orderBy('order', 'asc'),
-      limit(limit_count)
-    );
-
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-    } as FeaturedHighlight));
+  async getFeaturedHighlights(limit_count?: number): Promise<FeaturedHighlight[]> {
+    const params = new URLSearchParams();
+    if (limit_count) params.set('limit', String(limit_count));
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const data = await apiCall<{ highlights: any[] }>(`/api/featured-highlights/${query}`);
+    return data.highlights.map(mapRow);
   }
 
   async getFeaturedHighlight(id: string): Promise<FeaturedHighlight | null> {
-    const db = this.getDb();
-    const docRef = doc(db, 'featured-highlights', id);
-    const docSnap = await getDoc(docRef);
-
-    if (!docSnap.exists()) {
-      return null;
-    }
-
-    const data = docSnap.data();
-    return {
-      id: docSnap.id,
-      ...data,
-      createdAt: data.createdAt?.toDate() || new Date(),
-      updatedAt: data.updatedAt?.toDate() || new Date(),
-    } as FeaturedHighlight;
+    const all = await this.getFeaturedHighlights();
+    return all.find(h => h.id === id) || null;
   }
 
   async addFeaturedHighlight(highlight: Omit<FeaturedHighlight, 'id' | 'createdAt' | 'updatedAt'>): Promise<FeaturedHighlight> {
-    const db = this.getDb();
-    const now = Timestamp.now();
-
-    // Get the next order number
-    const q = query(collection(db, 'featured-highlights'), orderBy('order', 'desc'), limit(1));
-    const snapshot = await getDocs(q);
-    const nextOrder = snapshot.empty ? 1 : (snapshot.docs[0].data().order || 0) + 1;
-
-    const docRef = doc(collection(db, 'featured-highlights'));
-    const data = {
-      ...highlight,
-      order: highlight.order || nextOrder,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await setDoc(docRef, data);
-
-    return {
-      id: docRef.id,
-      ...data,
-      createdAt: data.createdAt.toDate(),
-      updatedAt: data.updatedAt.toDate(),
-    } as FeaturedHighlight;
+    const data = await apiCall<{ id: string }>('/api/featured-highlights/', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'add',
+        highlight: {
+          translationId: highlight.translationId,
+          book: highlight.book,
+          chapter: highlight.chapter,
+          verse: highlight.verse,
+          text: highlight.text,
+          title: highlight.title,
+          description: highlight.description,
+          order: highlight.order,
+        },
+      }),
+    });
+    const now = new Date();
+    return { ...highlight, id: data.id, createdAt: now, updatedAt: now };
   }
 
   async updateFeaturedHighlight(id: string, updates: Partial<Omit<FeaturedHighlight, 'id' | 'createdAt'>>): Promise<void> {
-    const db = this.getDb();
-    const docRef = doc(db, 'featured-highlights', id);
-
-    await setDoc(docRef, {
-      ...updates,
-      updatedAt: Timestamp.now(),
-    }, { merge: true });
+    await apiCall('/api/featured-highlights/', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update', id, updates }),
+    });
   }
 
   async deleteFeaturedHighlight(id: string): Promise<void> {
-    const db = this.getDb();
-    await deleteDoc(doc(db, 'featured-highlights', id));
+    await apiCall('/api/featured-highlights/', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'delete', id }),
+    });
   }
 
   async reorderFeaturedHighlights(ids: string[]): Promise<void> {
-    const db = this.getDb();
-    const batch = writeBatch(db);
-
-    ids.forEach((id, index) => {
-      const docRef = doc(db, 'featured-highlights', id);
-      batch.update(docRef, {
-        order: index + 1,
-        updatedAt: Timestamp.now(),
-      });
+    await apiCall('/api/featured-highlights/', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'reorder', ids }),
     });
-
-    await batch.commit();
   }
 
   async getFeaturedHighlightsWithContent(translations: Translation[]): Promise<Array<FeaturedHighlight & { translationName: string; verseText: string }>> {
     const highlights = await this.getFeaturedHighlights();
-
-    return highlights.map(highlight => {
-      const translation = translations.find(t => t.id === highlight.translationId);
-      const book = translation?.books.find(b => b.name === highlight.book);
-      const chapter = book?.chapters.find(c => c.number === highlight.chapter);
-      const verse = chapter?.verses.find(v => v.number === highlight.verse);
-
+    return highlights.map(h => {
+      const translation = translations.find(t => t.id === h.translationId);
+      const book = translation?.books.find(b => b.name === h.book);
+      const chapter = book?.chapters.find(c => c.number === h.chapter);
+      const verse = chapter?.verses.find(v => v.number === h.verse);
       return {
-        ...highlight,
-        translationName: translation?.name || highlight.translationId,
-        verseText: verse?.text || highlight.text,
+        ...h,
+        translationName: translation?.name || h.translationId,
+        verseText: verse?.text || h.text,
       };
     });
   }

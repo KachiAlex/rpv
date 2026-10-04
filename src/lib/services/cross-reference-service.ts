@@ -1,88 +1,14 @@
-import { getFirebase } from '../firebase';
-import { doc, getDoc, setDoc, collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import type { CrossReference } from '../types';
 
 export class CrossReferenceService {
-  private getDb() {
-    const { db } = getFirebase();
-    if (!db) {
-      throw new Error('Firebase not initialized');
-    }
-    return db;
-  }
+  async getCrossReferences(_translationId: string, _book: string, _chapter: number, _verse: number): Promise<CrossReference[]> { return []; }
+  async addCrossReference(_reference: Omit<CrossReference, 'id'>): Promise<string> { return ''; }
 
-  /**
-   * Get cross-references for a specific verse
-   */
-  async getCrossReferences(
-    translationId: string,
-    book: string,
-    chapter: number,
-    verse: number
-  ): Promise<CrossReference[]> {
-    const db = this.getDb();
-    const crossRefsRef = collection(db, 'crossReferences');
-    
-    // Query for references that point FROM this verse
-    const fromQuery = query(
-      crossRefsRef,
-      where('fromTranslationId', '==', translationId),
-      where('fromBook', '==', book),
-      where('fromChapter', '==', chapter),
-      where('fromVerse', '==', verse)
-    );
-    
-    const fromSnapshot = await getDocs(fromQuery);
-    const results: CrossReference[] = [];
-    
-    fromSnapshot.docs.forEach(doc => {
-      const data = doc.data();
-      results.push({
-        id: doc.id,
-        fromTranslationId: data.fromTranslationId,
-        fromBook: data.fromBook,
-        fromChapter: data.fromChapter,
-        fromVerse: data.fromVerse,
-        toTranslationId: data.toTranslationId || translationId, // Default to same translation
-        toBook: data.toBook,
-        toChapter: data.toChapter,
-        toVerse: data.toVerse,
-        type: data.type || 'related',
-        note: data.note,
-      } as CrossReference);
-    });
-    
-    return results;
-  }
-
-  /**
-   * Add a cross-reference
-   */
-  async addCrossReference(reference: Omit<CrossReference, 'id'>): Promise<string> {
-    const db = this.getDb();
-    const crossRefsRef = collection(db, 'crossReferences');
-    const docRef = doc(crossRefsRef);
-    
-    await setDoc(docRef, {
-      ...reference,
-      toTranslationId: reference.toTranslationId || reference.fromTranslationId,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    });
-    
-    return docRef.id;
-  }
-
-  /**
-   * Get commonly referenced verses for popular verses
-   * This is a static helper that can be used for initial cross-references
-   */
   getCommonCrossReferences(
     book: string,
     chapter: number,
     verse: number
   ): Array<Omit<CrossReference, 'id' | 'fromTranslationId' | 'toTranslationId'>> {
-    // Common cross-references - can be expanded
     const commonRefs: Record<string, Array<{ book: string; chapter: number; verse: number; type?: CrossReference['type'] }>> = {
       'John 3:16': [
         { book: 'Romans', chapter: 5, verse: 8, type: 'similar' },
@@ -131,48 +57,5 @@ export class CrossReferenceService {
     }));
   }
 
-  /**
-   * Get all cross-references that point TO a specific verse
-   * Useful for showing "this verse is referenced by..."
-   */
-  async getReferencedBy(
-    translationId: string,
-    book: string,
-    chapter: number,
-    verse: number
-  ): Promise<CrossReference[]> {
-    const db = this.getDb();
-    const crossRefsRef = collection(db, 'crossReferences');
-    
-    const toQuery = query(
-      crossRefsRef,
-      where('toTranslationId', '==', translationId),
-      where('toBook', '==', book),
-      where('toChapter', '==', chapter),
-      where('toVerse', '==', verse)
-    );
-    
-    const toSnapshot = await getDocs(toQuery);
-    const results: CrossReference[] = [];
-    
-    toSnapshot.docs.forEach(doc => {
-      const data = doc.data();
-      results.push({
-        id: doc.id,
-        fromTranslationId: data.fromTranslationId,
-        fromBook: data.fromBook,
-        fromChapter: data.fromChapter,
-        fromVerse: data.fromVerse,
-        toTranslationId: data.toTranslationId || translationId,
-        toBook: data.toBook,
-        toChapter: data.toChapter,
-        toVerse: data.toVerse,
-        type: data.type || 'related',
-        note: data.note,
-      } as CrossReference);
-    });
-    
-    return results;
-  }
+  async getReferencedBy(_translationId: string, _book: string, _chapter: number, _verse: number): Promise<CrossReference[]> { return []; }
 }
-

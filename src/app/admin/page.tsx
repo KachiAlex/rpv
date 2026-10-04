@@ -14,8 +14,7 @@ async function parseDocument(file: File, translationId: string, translationName:
 }
 
 // Force dynamic rendering to avoid server-side document parsing
-export const dynamic = 'force-dynamic';
-
+// export const dynamic = 'force-dynamic';
 type AdminTab = 'upload' | 'manage' | 'highlights' | 'blog' | 'banner';
 
 function AdminPageContent() {

@@ -23,7 +23,7 @@ describe('Mobile Layout Consistency Tests', () => {
 
   test.prop([fc.constantFrom('xs', 'sm', 'md', 'lg', 'xl', '2xl') as any])(
     'should return valid spacing for all sizes',
-    (size) => {
+    (size: any) => {
       const spacing = getMobileSpacing(size);
       expect(typeof spacing).toBe('number');
       expect(spacing).toBeGreaterThan(0);

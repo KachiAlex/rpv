@@ -1,12 +1,10 @@
 import { IndexedDBCache } from './indexeddb-cache';
-import { OptimizedFirestoreRepository } from '../repositories/optimized-firestore-repository';
 import { OfflineQueue } from './offline-queue';
 import { NetworkStatus } from '../utils/network-status';
 import type { Translation, ProjectorRef } from '../types';
 
 export class OptimizedCacheManager {
   private indexedDB: IndexedDBCache;
-  private repository: OptimizedFirestoreRepository;
   private offlineQueue: OfflineQueue;
   private metadataCache: Map<string, Translation> = new Map();
   private contentCache: Map<string, Translation> = new Map();
@@ -15,7 +13,6 @@ export class OptimizedCacheManager {
 
   constructor() {
     this.indexedDB = new IndexedDBCache();
-    this.repository = new OptimizedFirestoreRepository();
     this.offlineQueue = new OfflineQueue();
     
     // Process queue when coming back online
@@ -38,54 +35,14 @@ export class OptimizedCacheManager {
       return [];
     }
     
-    // When online, try Firestore metadata first
-    if (isOnline) {
-      try {
-        const { db } = await import('../firebase').then(m => m.getFirebase());
-        if (db) {
-          console.log('[OptimizedCacheManager] Loading translation metadata from Firestore...');
-          const translations = await this.repository.getAllTranslationsMetadata();
-          console.log('[OptimizedCacheManager] Loaded', translations.length, 'translation metadata from Firestore');
-          
-          // Update metadata cache
-          if (translations.length > 0) {
-            translations.forEach(t => {
-              this.metadataCache.set(t.id, t);
-              // Save metadata to IndexedDB for offline access
-              this.indexedDB.saveTranslation(t).catch(() => {});
-            });
-            
-            console.log('[OptimizedCacheManager] Returning', translations.length, 'translations (metadata only)');
-            return translations;
-          } else {
-            console.log('[OptimizedCacheManager] No translations found in Firestore, trying IndexedDB...');
-          }
-        } else {
-          console.warn('[OptimizedCacheManager] Firestore DB not available');
-        }
-      } catch (error) {
-        console.warn('[OptimizedCacheManager] Firestore metadata read failed, trying IndexedDB:', error);
-      }
-    }
-
-    // Fallback to IndexedDB (for offline or if Firestore fails)
+    // Load from IndexedDB
     try {
       console.log('[OptimizedCacheManager] Loading translations from IndexedDB...');
       const cached = await this.indexedDB.getAllTranslations();
       console.log('[OptimizedCacheManager] Loaded', cached.length, 'translations from IndexedDB');
       
       if (cached.length > 0) {
-        // Update metadata cache
         cached.forEach(t => this.metadataCache.set(t.id, t));
-        
-        // If online, try to refresh metadata from Firestore in background
-        if (isOnline) {
-          console.log('[OptimizedCacheManager] Refreshing metadata from Firestore in background...');
-          this.refreshMetadataFromFirestore().catch((err) => {
-            console.warn('[OptimizedCacheManager] Background metadata refresh failed:', err);
-          });
-        }
-        
         console.log('[OptimizedCacheManager] Returning', cached.length, 'translations from IndexedDB');
         return cached;
       }
@@ -110,12 +67,9 @@ export class OptimizedCacheManager {
       console.log('[OptimizedCacheManager] Loading full content for metadata-only translation:', id);
       
       try {
-        const fullTranslation = await this.repository.getTranslationWithContent(id);
+        const fullTranslation = await this.indexedDB.getTranslation(id);
         if (fullTranslation) {
-          // Cache the full content
           this.contentCache.set(id, fullTranslation);
-          // Update IndexedDB with full content
-          await this.indexedDB.saveTranslation(fullTranslation).catch(() => {});
           return fullTranslation;
         }
       } catch (error) {
@@ -139,12 +93,13 @@ export class OptimizedCacheManager {
 
     try {
       console.log('[OptimizedCacheManager] Loading book content on demand:', bookName, 'from translation:', translationId);
-      const bookContent = await this.repository.getBookContent(translationId, bookName);
-      
-      if (bookContent) {
-        // Cache the book content
-        this.bookCache.set(cacheKey, bookContent);
-        return bookContent;
+      const translation = await this.indexedDB.getTranslation(translationId);
+      if (translation) {
+        const book = translation.books.find(b => b.name === bookName);
+        if (book) {
+          this.bookCache.set(cacheKey, book);
+          return book;
+        }
       }
     } catch (error) {
       console.warn('[OptimizedCacheManager] Error loading book content:', error);
@@ -165,12 +120,14 @@ export class OptimizedCacheManager {
 
     try {
       console.log('[OptimizedCacheManager] Loading chapter content on demand:', bookName, chapterNumber, 'from translation:', translationId);
-      const chapterContent = await this.repository.getChapterContent(translationId, bookName, chapterNumber);
-      
-      if (chapterContent) {
-        // Cache the chapter content
-        this.chapterCache.set(cacheKey, chapterContent);
-        return chapterContent;
+      const translation = await this.indexedDB.getTranslation(translationId);
+      if (translation) {
+        const book = translation.books.find(b => b.name === bookName);
+        const chapter = book?.chapters.find(c => c.number === chapterNumber);
+        if (chapter) {
+          this.chapterCache.set(cacheKey, chapter);
+          return chapter;
+        }
       }
     } catch (error) {
       console.warn('[OptimizedCacheManager] Error loading chapter content:', error);
@@ -199,24 +156,7 @@ export class OptimizedCacheManager {
         return cached;
       }
     } catch (error) {
-      console.warn('IndexedDB cache read failed, trying Firestore:', error);
-    }
-
-    // Try Firestore
-    try {
-      const { db } = await import('../firebase').then(m => m.getFirebase());
-      if (db) {
-        const translation = await this.repository.getTranslation(id);
-        if (translation) {
-          // Update caches
-          this.metadataCache.set(id, translation);
-          this.contentCache.set(id, translation);
-          await this.indexedDB.saveTranslation(translation).catch(() => {});
-        }
-        return translation;
-      }
-    } catch (error) {
-      console.warn('Firestore read failed:', error);
+      console.warn('IndexedDB cache read failed:', error);
     }
 
     return null;
@@ -229,45 +169,6 @@ export class OptimizedCacheManager {
 
     // Save to IndexedDB (fast, local)
     await this.indexedDB.saveTranslation(translation).catch(() => {});
-
-    // Save to Firestore (async, can fail)
-    const isOnline = NetworkStatus.getOnline();
-    try {
-      const { db, auth } = await import('../firebase').then(m => m.getFirebase());
-      const isAuthenticated = !!auth && !!auth.currentUser;
-      if (db && isOnline && isAuthenticated) {
-        // Always save all books to Firestore
-        const booksToWrite = translation.books || [];
-        if (booksToWrite.length > 0) {
-          await this.repository.saveBooks(translation.id, translation.name, booksToWrite);
-        } else {
-          await this.repository.saveTranslation(translation);
-        }
-      } else if (!isOnline) {
-        await this.offlineQueue.addOperation({
-          type: 'saveTranslation',
-          data: translation,
-        });
-      } else if (!isAuthenticated) {
-        console.warn('User not authenticated, queuing translation save');
-        await this.offlineQueue.addOperation({
-          type: 'saveTranslation',
-          data: translation,
-        });
-      }
-    } catch (error) {
-      const message = String(error?.toString?.() || error);
-      const permissionDenied = message.includes('Missing or insufficient permissions') || message.includes('permission-denied');
-      console.error('Error saving translation to Firestore:', error);
-      if (!permissionDenied) {
-        await this.offlineQueue.addOperation({
-          type: 'saveTranslation',
-          data: translation,
-        });
-      } else {
-        console.warn('Permission denied saving translation - user may need to authenticate');
-      }
-    }
   }
 
   async mergeTranslation(translation: Translation): Promise<Translation> {
@@ -288,66 +189,16 @@ export class OptimizedCacheManager {
     // Save to IndexedDB
     await this.indexedDB.saveTranslation(merged).catch(() => {});
 
-    // Save to Firestore or queue
-    const isOnline = NetworkStatus.getOnline();
-    try {
-      const { db, auth } = await import('../firebase').then(m => m.getFirebase());
-      const isAuthenticated = !!auth && !!auth.currentUser;
-      
-      if (db && isOnline && isAuthenticated) {
-        if ((merged.books || []).length > 0) {
-          await this.repository.saveBooks(merged.id, merged.name, merged.books);
-        } else {
-          await this.repository.saveTranslation(merged);
-        }
-      } else if (!isOnline) {
-        await this.offlineQueue.addOperation({
-          type: 'mergeTranslation',
-          data: merged,
-        });
-      } else if (!isAuthenticated) {
-        await this.offlineQueue.addOperation({
-          type: 'mergeTranslation',
-          data: merged,
-        });
-      }
-    } catch (error) {
-      const message = String(error?.toString?.() || error);
-      const permissionDenied = message.includes('Missing or insufficient permissions') || message.includes('permission-denied');
-      console.error('Error saving translation to Firestore:', error);
-      if (!permissionDenied) {
-        await this.offlineQueue.addOperation({
-          type: 'mergeTranslation',
-          data: merged,
-        });
-      }
-    }
-
     return merged;
   }
 
-  // Projection channel methods (unchanged)
+  // Projection channel methods
   async getProjectionChannel(channelId: string): Promise<ProjectorRef | null> {
     try {
       const cached = await this.indexedDB.getProjectionChannel(channelId);
-      if (cached) {
-        return cached;
-      }
+      return cached;
     } catch (error) {
       console.warn('IndexedDB read failed:', error);
-    }
-
-    try {
-      const { db } = await import('../firebase').then(m => m.getFirebase());
-      if (db) {
-        const ref = await this.repository.getProjectionChannel(channelId);
-        if (ref) {
-          await this.indexedDB.saveProjectionChannel(channelId, ref).catch(() => {});
-        }
-        return ref;
-      }
-    } catch (error) {
-      console.warn('Firestore read failed:', error);
     }
 
     return null;
@@ -355,45 +206,9 @@ export class OptimizedCacheManager {
 
   async saveProjectionChannel(channelId: string, ref: ProjectorRef): Promise<void> {
     await this.indexedDB.saveProjectionChannel(channelId, ref).catch(() => {});
-
-    const isOnline = NetworkStatus.getOnline();
-    try {
-      const { db } = await import('../firebase').then(m => m.getFirebase());
-      if (db && isOnline) {
-        await this.repository.saveProjectionChannel(channelId, ref);
-      } else if (!isOnline) {
-        await this.offlineQueue.addOperation({
-          type: 'sendToProjector',
-          data: { channelId, ref },
-        });
-      }
-    } catch (error) {
-      console.warn('Firestore save failed, queuing for later:', error);
-      await this.offlineQueue.addOperation({
-        type: 'sendToProjector',
-        data: { channelId, ref },
-      });
-    }
   }
 
   // Cache management methods
-  private async refreshMetadataFromFirestore(): Promise<void> {
-    try {
-      const { db } = await import('../firebase').then(m => m.getFirebase());
-      if (!db) return;
-
-      const translations = await this.repository.getAllTranslationsMetadata();
-      
-      // Update caches
-      translations.forEach(t => {
-        this.metadataCache.set(t.id, t);
-        this.indexedDB.saveTranslation(t).catch(() => {});
-      });
-    } catch (error) {
-      // Silent fail - offline mode
-    }
-  }
-
   private mergeTranslations(existing: Translation, newTranslation: Translation): Translation {
     // Same merge logic as before
     const existingBooksMap = new Map<string, typeof existing.books[number]>();
@@ -537,45 +352,22 @@ export class OptimizedCacheManager {
   }
 
   private async processPendingOperations(): Promise<void> {
-    try {
-      const { auth } = await import('../firebase').then(m => m.getFirebase());
-      const isAuthenticated = !!auth && !!auth.currentUser;
-      if (!isAuthenticated) {
-        return;
-      }
-    } catch {
-      return;
-    }
-
     await this.offlineQueue.processQueue({
       saveTranslation: async (translation: Translation) => {
-        const { db } = await import('../firebase').then(m => m.getFirebase());
-        if (db) {
-          await this.repository.saveTranslation(translation);
-        }
+        await this.saveTranslation(translation);
       },
       mergeTranslation: async (translation: Translation) => {
         await this.mergeTranslation(translation);
       },
       sendToProjector: async (data: { channelId: string; ref: ProjectorRef }) => {
-        const { db } = await import('../firebase').then(m => m.getFirebase());
-        if (db) {
-          await this.repository.saveProjectionChannel(data.channelId, data.ref);
-        }
+        await this.saveProjectionChannel(data.channelId, data.ref);
       },
       updateBookPublication: async (data: { translationId: string; bookName: string; published: boolean }) => {
-        const { db } = await import('../firebase').then(m => m.getFirebase());
-        if (db) {
-          await this.repository.updateBookPublicationStatus(data.translationId, data.bookName, data.published);
-        }
+        await this.updateBookPublicationStatus(data.translationId, data.bookName, data.published);
       },
       bulkUpdateBookPublication: async (data: { translationId: string; bookUpdates: Array<{ bookName: string; published: boolean }> }) => {
-        const { db } = await import('../firebase').then(m => m.getFirebase());
-        if (db) {
-          // Process each book update individually
-          for (const update of data.bookUpdates) {
-            await this.repository.updateBookPublicationStatus(data.translationId, update.bookName, update.published);
-          }
+        for (const update of data.bookUpdates) {
+          await this.updateBookPublicationStatus(data.translationId, update.bookName, update.published);
         }
       },
     });
@@ -585,36 +377,15 @@ export class OptimizedCacheManager {
     console.log('[OptimizedCacheManager] Updating book publication status with offline support:', bookName, 'to:', published);
     
     try {
-      // Check network status
-      const isOnline = NetworkStatus.getOnline();
-      
-      if (isOnline) {
-        // Update in Firestore immediately
-        await this.repository.updateBookPublicationStatus(translationId, bookName, published);
-      } else {
-        // Queue for offline processing
-        console.log('[OptimizedCacheManager] Offline - queuing book publication update');
-        await this.offlineQueue.addOperation({
-          type: 'updateBookPublication',
-          data: { translationId, bookName, published }
-        });
-      }
-      
-      // Update local cache immediately for responsive UI
+      await this.updateBookPublicationStatus(translationId, bookName, published);
       await this.updateBookPublicationInLocalCache(translationId, bookName, published);
-      
     } catch (error) {
       console.error('Error updating book publication status:', error);
-      
-      // If online update fails, queue for retry
       await this.offlineQueue.addOperation({
         type: 'updateBookPublication',
         data: { translationId, bookName, published }
       });
-      
-      // Still update local cache for responsive UI
       await this.updateBookPublicationInLocalCache(translationId, bookName, published);
-      
       throw error;
     }
   }
@@ -623,42 +394,21 @@ export class OptimizedCacheManager {
     console.log('[OptimizedCacheManager] Bulk updating book publication status with offline support for translation:', translationId);
     
     try {
-      // Check network status
-      const isOnline = NetworkStatus.getOnline();
-      
-      if (isOnline) {
-        // Update in Firestore immediately
-        for (const update of bookUpdates) {
-          await this.repository.updateBookPublicationStatus(translationId, update.bookName, update.published);
-        }
-      } else {
-        // Queue for offline processing
-        console.log('[OptimizedCacheManager] Offline - queuing bulk book publication update');
-        await this.offlineQueue.addOperation({
-          type: 'bulkUpdateBookPublication',
-          data: { translationId, bookUpdates }
-        });
+      for (const update of bookUpdates) {
+        await this.updateBookPublicationStatus(translationId, update.bookName, update.published);
       }
-      
-      // Update local cache immediately for responsive UI
       for (const update of bookUpdates) {
         await this.updateBookPublicationInLocalCache(translationId, update.bookName, update.published);
       }
-      
     } catch (error) {
       console.error('Error in bulk book publication status update:', error);
-      
-      // If online update fails, queue for retry
       await this.offlineQueue.addOperation({
         type: 'bulkUpdateBookPublication',
         data: { translationId, bookUpdates }
       });
-      
-      // Still update local cache for responsive UI
       for (const update of bookUpdates) {
         await this.updateBookPublicationInLocalCache(translationId, update.bookName, update.published);
       }
-      
       throw error;
     }
   }

@@ -48,6 +48,11 @@ function NavIcon({ name }: { name: string }) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+
+  // Bypass shell for auth pages
+  if (pathname === '/login' || pathname === '/admin/login') {
+    return <>{children}</>;
+  }
   const router = useRouter();
   const { user, isAuthenticated, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -78,6 +83,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   const isActive = (href: string) => {
+    if (!pathname) return false;
     if (href === '/') return pathname === '/';
     return pathname.startsWith(href);
   };
@@ -98,9 +104,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <>
       <div className="rpv-brand">
         <div className="rpv-brand-mark">
-          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="#E23B4E" strokeWidth="2"><path d="M12 3v8M8.5 7H15.5"/><path d="M4 13c0 3 3.5 5 8 7 4.5-2 8-4 8-7-2-1-5-.5-8 1.5C9 12.5 6 12 4 13Z" stroke="#fff"/></svg>
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="#d93a4e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v8M8.5 7H15.5"/><path d="M4 13c0 3 3.5 5 8 7 4.5-2 8-4 8-7-2-1-5-.5-8 1.5C9 12.5 6 12 4 13Z" stroke="#fff"/></svg>
         </div>
         <div className="rpv-brand-name">RPV <span>Bible</span></div>
+        <button
+          type="button"
+          className="rpv-sidebar-close"
+          onClick={() => setSidebarOpen(false)}
+          aria-label="Close sidebar"
+        >
+          <X size={22} />
+        </button>
       </div>
 
       <div className="rpv-nav-group">
@@ -172,32 +186,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Main */}
       <div className="rpv-main">
         <div className="rpv-topbar">
-          <div className="flex items-center gap-3 flex-1">
+          <div className="rpv-topbar-left">
             <button
-              className="lg:hidden p-1"
+              className="rpv-menu-toggle"
               onClick={() => setSidebarOpen(!sidebarOpen)}
               aria-label="Toggle sidebar"
             >
-              {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+              {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
-            <div
-              className="rpv-topbar-search"
-              onClick={() => router.push('/search')}
-            >
-              <Search size={15} />
-              <span className="hidden sm:inline">Jump to a passage, book, or topic…</span>
-              <span className="sm:hidden">Search…</span>
-            </div>
+            {pathname !== '/' && (
+              <div
+                className="rpv-topbar-search"
+                onClick={() => router.push('/search')}
+                aria-label="Search"
+                role="button"
+              >
+                <Search size={15} />
+                <span className="rpv-search-label-full">Jump to a passage, book, or topic…</span>
+                <span className="rpv-search-label-short">Search…</span>
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="rpv-topbar-right">
             {isAuthenticated ? (
-              <div className="relative">
-                <button
-                  onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="rpv-avatar"
-                  aria-label="User menu"
-                >
+              <div className="rpv-user-menu-wrap">
+              <button
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="rpv-avatar rpv-avatar-button"
+                aria-label="User menu"
+              >
                   {initials}
                 </button>
                 {showUserMenu && (
@@ -248,10 +266,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : (
               <Link
                 href="/login"
-                className="flex items-center gap-2 text-sm font-semibold text-[var(--rpv-ink)] hover:text-[var(--red-600)] transition-colors"
+                className="rpv-signin-link"
               >
-                <LogIn size={16} />
-                <span className="hidden sm:inline">Sign In</span>
+                <LogIn size={18} />
+                <span className="rpv-signin-text">Sign In</span>
               </Link>
             )}
           </div>

@@ -1,20 +1,16 @@
 <svg width="192" height="192" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Navy blue background -->
-  <rect width="192" height="192" fill="#2B3A67" rx="24"/>
-  
-  <!-- Simplified open book -->
-  <path d="M48 60 L48 132 Q48 138 54 138 L90 138 Q96 135 96 129 L96 66 Q96 60 90 60 L54 60 Q48 60 48 60 Z" 
-        stroke="white" stroke-width="3" fill="none"/>
-  <path d="M144 60 L144 132 Q144 138 138 138 L102 138 Q96 135 96 129 L96 66 Q96 60 102 60 L138 60 Q144 60 144 60 Z" 
-        stroke="white" stroke-width="3" fill="none"/>
-  
-  <!-- Book spine -->
-  <line x1="96" y1="60" x2="96" y2="138" stroke="white" stroke-width="2"/>
-  
-  <!-- Cross above book -->
-  <line x1="96" y1="30" x2="96" y2="55" stroke="white" stroke-width="4"/>
-  <line x1="84" y1="37" x2="108" y2="37" stroke="white" stroke-width="4"/>
-  
-  <!-- RPV Text -->
-  <text x="96" y="110" font-family="serif" font-size="32" font-weight="bold" fill="white" text-anchor="middle">RPV</text>
+  <!-- Dark navy background with rounded corners -->
+  <rect width="192" height="192" fill="#12193a" rx="28"/>
+
+  <!-- Open book -->
+  <path d="M40 74 C40 68 46 64 52 64 L90 64 C96 64 96 68 96 74 L96 124 C96 130 90 134 84 134 L52 134 C46 134 40 130 40 124 Z" fill="white"/>
+  <path d="M152 74 C152 68 146 64 140 64 L102 64 C96 64 96 68 96 74 L96 124 C96 130 102 134 108 134 L140 134 C146 134 152 130 152 124 Z" fill="white"/>
+  <rect x="94" y="64" width="4" height="70" fill="#12193a"/>
+
+  <!-- Red cross -->
+  <rect x="88" y="22" width="16" height="112" rx="8" fill="#d93a4e"/>
+  <rect x="64" y="46" width="64" height="16" rx="8" fill="#d93a4e"/>
+
+  <!-- RPV text -->
+  <text x="96" y="166" font-family="Georgia, 'Times New Roman', serif" font-size="34" font-weight="bold" fill="white" text-anchor="middle">RPV</text>
 </svg>

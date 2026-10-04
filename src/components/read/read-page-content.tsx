@@ -16,12 +16,51 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useMediaQuery } from '@/lib/hooks/use-media-query';
 import { ReadingProgressService } from '@/lib/services/reading-progress-service';
 
+const BIBLE_BOOK_ORDER = [
+  // Old Testament
+  'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
+  'Joshua', 'Judges', 'Ruth', '1 Samuel', '2 Samuel',
+  '1 Kings', '2 Kings', '1 Chronicles', '2 Chronicles', 'Ezra',
+  'Nehemiah', 'Esther', 'Job', 'Psalms', 'Proverbs',
+  'Ecclesiastes', 'Song of Solomon', 'Isaiah', 'Jeremiah', 'Lamentations',
+  'Ezekiel', 'Daniel', 'Hosea', 'Joel', 'Amos',
+  'Obadiah', 'Jonah', 'Micah', 'Nahum', 'Habakkuk',
+  'Zephaniah', 'Haggai', 'Zechariah', 'Malachi',
+  // New Testament
+  'Matthew', 'Mark', 'Luke', 'John', 'Acts',
+  'Romans', '1st Corinthians', '2nd Corinthians', 'Galatians', 'Ephesians',
+  'Philippians', 'Colossians', '1st Thessalonians', '2nd Thessalonians',
+  '1st Timothy', '2nd Timothy', 'Titus', 'Philemon',
+  'Hebrews', 'James (Jacob)', '1st Peter', '2nd Peter',
+  '1st John', '2nd John', '3rd John', 'Jude', 'Revelation',
+];
+
+const LAST_SCRIPTURE_KEY = 'rpv:lastScripture';
+const DEFAULT_BOOK = 'Ephesians';
+const DEFAULT_CHAPTER = 1;
+const DEFAULT_VERSE = 1;
+
+function loadLastScripture(): { book: string; chapter: number; verse: number } {
+  if (typeof window === 'undefined') return { book: DEFAULT_BOOK, chapter: DEFAULT_CHAPTER, verse: DEFAULT_VERSE };
+  try {
+    const stored = localStorage.getItem(LAST_SCRIPTURE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed.book && typeof parsed.chapter === 'number' && typeof parsed.verse === 'number') {
+        return parsed;
+      }
+    }
+  } catch {}
+  return { book: DEFAULT_BOOK, chapter: DEFAULT_CHAPTER, verse: DEFAULT_VERSE };
+}
+
 export default function ReadPageContent() {
   const { translations, current, loadSample, loadTranslations, setReference, setCurrent, getTranslationsForEndUsers, loadBookContent } = useBibleStore();
   const { user, isAuthenticated } = useAuth();
-  const [book, setBook] = useState<string>('');
-  const [chapter, setChapter] = useState<number>(1);
-  const [verse, setVerse] = useState<number>(1);
+  const [initialScripture] = useState(() => loadLastScripture());
+  const [book, setBook] = useState<string>(initialScripture.book);
+  const [chapter, setChapter] = useState<number>(initialScripture.chapter);
+  const [verse, setVerse] = useState<number>(initialScripture.verse);
 
   const [showNotes, setShowNotes] = useState(false);
   const [selectedVerses, setSelectedVerses] = useState<Set<number>>(new Set());
@@ -57,6 +96,15 @@ export default function ReadPageContent() {
 
     // Filter books to only show published ones for end users
     const publishedBooks = current.books.filter(b => b && b.name && Array.isArray(b.chapters) && b.published !== false);
+    // Sort in Biblical canonical order (Genesis to Revelation)
+    publishedBooks.sort((a, b) => {
+      const idxA = BIBLE_BOOK_ORDER.indexOf(a.name);
+      const idxB = BIBLE_BOOK_ORDER.indexOf(b.name);
+      if (idxA === -1 && idxB === -1) return a.name.localeCompare(b.name);
+      if (idxA === -1) return 1;
+      if (idxB === -1) return -1;
+      return idxA - idxB;
+    });
     console.log('[ReadPage] Current translation:', current.id, 'Total books:', current.books.length, 'Published books:', publishedBooks.length);
     return publishedBooks;
   }, [current]);
@@ -127,6 +175,15 @@ export default function ReadPageContent() {
     };
   }, [showMobileFilters, isDesktop]);
 
+  // Persist last opened scripture to localStorage
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!book) return;
+    try {
+      localStorage.setItem(LAST_SCRIPTURE_KEY, JSON.stringify({ book, chapter, verse }));
+    } catch {}
+  }, [book, chapter, verse]);
+
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -166,6 +223,19 @@ export default function ReadPageContent() {
     }
   }, [searchParams, current?.id, setCurrent]);
 
+  // Fallback: if book doesn't exist in the current translation, use first available or default
+  useEffect(() => {
+    if (books.length === 0) return;
+    const exists = books.some(b => b.name === book);
+    if (!exists) {
+      const ephesians = books.find(b => b.name === DEFAULT_BOOK);
+      const fallback = ephesians || books[0];
+      setBook(fallback.name);
+      setChapter(DEFAULT_CHAPTER);
+      setVerse(DEFAULT_VERSE);
+    }
+  }, [books, book]);
+
   // Initialize parallel translations with current translation + first available
   useEffect(() => {
     if (current && safeTranslations.length > 0 && parallelTranslations.length === 0) {
@@ -187,17 +257,21 @@ export default function ReadPageContent() {
         const publishedBooks = current.books.filter(b => b && b.name && Array.isArray(b.chapters) && b.published !== false);
         const selectedBook = publishedBooks.find(b => b.name === book);
         
-        if (selectedBook && selectedBook.chapters.length === 0) {
-          console.log('[ReadPage] Loading content for published book:', book);
-          setIsLoadingBookContent(true);
-          try {
-            await loadBookContent(current.id, book);
-          } catch (error) {
-            console.error('Error loading book content:', error);
-          } finally {
-            setIsLoadingBookContent(false);
+        if (selectedBook) {
+          // Check if book content (verses) has been loaded - metadata may have chapters with empty verses
+          const hasVerseContent = selectedBook.chapters.some(c => c && Array.isArray(c.verses) && c.verses.length > 0);
+          if (!hasVerseContent) {
+            console.log('[ReadPage] Loading content for published book:', book);
+            setIsLoadingBookContent(true);
+            try {
+              await loadBookContent(current.id, book);
+            } catch (error) {
+              console.error('Error loading book content:', error);
+            } finally {
+              setIsLoadingBookContent(false);
+            }
           }
-        } else if (!selectedBook) {
+        } else {
           // Book is not published or doesn't exist
           console.log('[ReadPage] Book not available for end users:', book);
         }
@@ -498,7 +572,6 @@ export default function ReadPageContent() {
             value={book}
             onChange={(e) => startNavigationTransition(() => setBook(e.target.value))}
           >
-            <option value="">Select book</option>
             {books.map((b) => (
               <option key={b.name} value={b.name}>
                 {b.name}
@@ -595,10 +668,6 @@ export default function ReadPageContent() {
         {quickReferenceCard}
 
         <div className="rpv-read-layout">
-          <aside className="rpv-read-sidebar rpv-card" style={{ padding: 16 }}>
-            {filtersContent}
-          </aside>
-
           <section className="rpv-scripture">
             <div className="rpv-scripture-head">
               <div className="rpv-scripture-ref">
@@ -715,46 +784,74 @@ export default function ReadPageContent() {
                   </div>
                 )}
 
-                <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-                  {displayedVerses.map((v) => (
-                    <div
-                      key={v.number}
-                      onClick={(e) => {
-                        if (e.ctrlKey || e.metaKey) {
-                          e.preventDefault();
-                          const newSelected = new Set(selectedVerses);
-                          if (newSelected.has(v.number)) {
-                            newSelected.delete(v.number);
-                          } else {
-                            newSelected.add(v.number);
-                          }
-                          setSelectedVerses(newSelected);
-                        } else {
-                          setVerse(v.number);
-                          setSelectedVerses(new Set([v.number]));
-                        }
-                      }}
-                      className={`cursor-pointer ${selectedVerses.has(v.number) ? 'ring-2 ring-[var(--red-500)]' : ''}`}
+                <div className="flex items-stretch gap-2">
+                  {previousChapter !== null && (
+                    <button
+                      onClick={goToPreviousChapter}
+                      className="flex items-center justify-center w-10 shrink-0 rounded-lg bg-[var(--rpv-lav)] hover:bg-[var(--navy-800)] hover:text-white text-[var(--rpv-ink-faint)] transition-all self-center"
+                      title={`Previous: Chapter ${previousChapter}`}
+                      aria-label="Previous chapter"
                     >
-                      <VerseCard
-                        verse={v}
-                        book={book}
-                        chapter={chapter}
-                        isSelected={v.number === verse}
-                        translationName={current?.name}
-                        translationId={current?.id}
-                        isAuthenticated={isAuthenticated}
-                        onNoteClick={() => {
-                          setVerse(v.number);
-                          setShowNotes(true);
+                      <ChevronLeft size={24} />
+                    </button>
+                  )}
+
+                  <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2 flex-1">
+                    {displayedVerses.map((v) => (
+                      <div
+                        key={v.number}
+                        onClick={(e) => {
+                          if (e.ctrlKey || e.metaKey) {
+                            e.preventDefault();
+                            const newSelected = new Set(selectedVerses);
+                            if (newSelected.has(v.number)) {
+                              newSelected.delete(v.number);
+                            } else {
+                              newSelected.add(v.number);
+                            }
+                            setSelectedVerses(newSelected);
+                          } else {
+                            setVerse(v.number);
+                            setSelectedVerses(new Set([v.number]));
+                          }
                         }}
-                      />
-                    </div>
-                  ))}
+                        className={`cursor-pointer ${selectedVerses.has(v.number) ? 'ring-2 ring-[var(--red-500)]' : ''}`}
+                      >
+                        <VerseCard
+                          verse={v}
+                          book={book}
+                          chapter={chapter}
+                          isSelected={v.number === verse}
+                          translationName={current?.name}
+                          translationId={current?.id}
+                          isAuthenticated={isAuthenticated}
+                          onNoteClick={() => {
+                            setVerse(v.number);
+                            setShowNotes(true);
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  {nextChapter !== null && (
+                    <button
+                      onClick={goToNextChapter}
+                      className="flex items-center justify-center w-10 shrink-0 rounded-lg bg-[var(--rpv-lav)] hover:bg-[var(--red-600)] hover:text-white text-[var(--rpv-ink-faint)] transition-all self-center"
+                      title={`Next: Chapter ${nextChapter}`}
+                      aria-label="Next chapter"
+                    >
+                      <ChevronRight size={24} />
+                    </button>
+                  )}
                 </div>
               </>
             )}
           </section>
+
+          <aside className="rpv-read-sidebar rpv-card" style={{ padding: 16 }}>
+            {filtersContent}
+          </aside>
         </div>
       </div>
 

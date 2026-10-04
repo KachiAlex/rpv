@@ -82,22 +82,6 @@ export default function HomePage() {
         </div>
         <h1 className="rpv-serif">A Bible built for today.</h1>
         <p>Read, search, and study the Bible with a clean, distraction-free experience. Powered by AI for deeper understanding.</p>
-
-        <div className="rpv-countdown">
-          <span>Full launch in</span>
-          <b>42d</b>
-          <b>06h</b>
-          <b>12m</b>
-        </div>
-
-        <div className="rpv-hero-form">
-          <input
-            type="email"
-            placeholder="Enter your email to get notified"
-            onChange={() => {}}
-          />
-          <button className="rpv-btn-red">Notify Me</button>
-        </div>
       </div>
 
       {/* Red strip */}

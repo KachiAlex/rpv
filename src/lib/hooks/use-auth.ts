@@ -1,104 +1,135 @@
 "use client";
-import { useEffect, useState } from 'react';
-import { AuthService } from '../services/auth-service';
-import type { User } from 'firebase/auth';
+import { useState, useEffect, useCallback } from 'react';
+import { getApiUrl } from '@/lib/api-config';
 
-const authService = new AuthService();
+export interface AppUser {
+  uid: string;
+  email: string;
+  displayName: string;
+  emailVerified: boolean;
+  isAnonymous: boolean;
+  getIdToken: () => Promise<string>;
+  toJSON: () => Record<string, unknown>;
+}
+
+const TOKEN_KEY = 'rpv:authToken';
+const USER_KEY = 'rpv:authUser';
+
+function getStoredToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+function getStoredUser(): AppUser | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return {
+      ...data,
+      getIdToken: async () => getStoredToken() || '',
+      toJSON: () => data,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function storeAuth(token: string, user: { uid: string; email: string; displayName: string; role: string }) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+function clearAuth() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+}
 
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Get initial user state
-    const currentUser = authService.getCurrentUser();
-    setUser(currentUser);
+    const stored = getStoredUser();
+    if (stored) {
+      setUser(stored);
+    }
     setLoading(false);
-
-    // Subscribe to auth state changes
-    const unsubscribe = authService.onAuthStateChange((user) => {
-      setUser(user);
-      setLoading(false);
-      setError(null);
-    });
-
-    return unsubscribe;
   }, []);
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = useCallback(async (email: string, password: string) => {
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
-      const user = await authService.signIn(email, password);
-      setUser(user);
-      return user;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to sign in';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
+      const res = await fetch(getApiUrl('/api/auth/login/'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Login failed');
 
-  const signUp = async (email: string, password: string, displayName?: string) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const user = await authService.signUp(email, password, displayName);
-      setUser(user);
-      return user;
+      storeAuth(data.token, data.user);
+      const appUser: AppUser = {
+        uid: data.user.uid,
+        email: data.user.email,
+        displayName: data.user.displayName,
+        emailVerified: true,
+        isAnonymous: false,
+        getIdToken: async () => getStoredToken() || '',
+        toJSON: () => data.user,
+      };
+      setUser(appUser);
+      return appUser;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to sign up';
-      setError(errorMessage);
+      const message = err instanceof Error ? err.message : 'Login failed';
+      setError(message);
       throw err;
-    } finally {
-      setLoading(false);
     }
-  };
+  }, []);
 
-  const signInWithGoogle = async () => {
+  const signUp = useCallback(async (email: string, password: string, displayName?: string) => {
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
-      const user = await authService.signInWithGoogle();
-      setUser(user);
-      return user;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to sign in with Google';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
+      const res = await fetch(getApiUrl('/api/auth/signup/'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, displayName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sign up failed');
 
-  const logout = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      await authService.signOut();
-      setUser(null);
+      storeAuth(data.token, data.user);
+      const appUser: AppUser = {
+        uid: data.user.uid,
+        email: data.user.email,
+        displayName: data.user.displayName,
+        emailVerified: true,
+        isAnonymous: false,
+        getIdToken: async () => getStoredToken() || '',
+        toJSON: () => data.user,
+      };
+      setUser(appUser);
+      return appUser;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to sign out';
-      setError(errorMessage);
+      const message = err instanceof Error ? err.message : 'Sign up failed';
+      setError(message);
       throw err;
-    } finally {
-      setLoading(false);
     }
-  };
+  }, []);
 
-  const resetPassword = async (email: string) => {
-    try {
-      setError(null);
-      await authService.resetPassword(email);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to reset password';
-      setError(errorMessage);
-      throw err;
-    }
-  };
+  const logout = useCallback(async () => {
+    clearAuth();
+    setUser(null);
+  }, []);
+
+  const resetPassword = useCallback(async (_email: string) => {
+    setError('Password reset is not yet available. Please contact support.');
+    throw new Error('Password reset not available');
+  }, []);
 
   return {
     user,
@@ -106,7 +137,6 @@ export function useAuth() {
     error,
     signIn,
     signUp,
-    signInWithGoogle,
     logout,
     resetPassword,
     isAuthenticated: !!user,

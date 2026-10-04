@@ -8,6 +8,7 @@
 
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import { useBibleStore } from '@/lib/store';
 import HomePage from '../page';
 import type { Translation } from '@/lib/types';
@@ -34,13 +35,13 @@ function createTranslation(id: string, name?: string, books: any[] = []): Transl
   };
 }
 
+const mockLoadTranslations = jest.fn();
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+
 describe('Homepage Translation Dropdown', () => {
-  const mockLoadTranslations = jest.fn();
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
   describe('Property 1: Dropdown options match store translations', () => {
     test('displays all translations from store', async () => {
       const translations = [
@@ -309,7 +310,7 @@ describe('Homepage Translation Dropdown', () => {
       // Mock window.location.href
       const originalLocation = window.location;
       delete (window as any).location;
-      window.location = { ...originalLocation, href: '' };
+      window.location = { ...originalLocation, href: '' } as any;
 
       render(<HomePage />);
 
@@ -334,7 +335,7 @@ describe('Homepage Translation Dropdown', () => {
       expect(window.location.href).toContain('q=John%203%3A16');
 
       // Restore original location
-      window.location = originalLocation;
+      window.location = originalLocation as any;
     });
 
     test('defaults to RPV when no selection made', async () => {
@@ -368,7 +369,7 @@ describe('Homepage Translation Dropdown', () => {
       // Mock window.location.href
       const originalLocation = window.location;
       delete (window as any).location;
-      window.location = { ...originalLocation, href: '' };
+      window.location = { ...originalLocation, href: '' } as any;
 
       render(<HomePage />);
 
@@ -388,7 +389,7 @@ describe('Homepage Translation Dropdown', () => {
       expect(window.location.href).toContain('translation=RPV');
 
       // Restore original location
-      window.location = originalLocation;
+      window.location = originalLocation as any;
     });
 
     test('persists selection across multiple searches', async () => {
@@ -422,7 +423,7 @@ describe('Homepage Translation Dropdown', () => {
       // Mock window.location.href
       const originalLocation = window.location;
       delete (window as any).location;
-      window.location = { ...originalLocation, href: '' };
+      window.location = { ...originalLocation, href: '' } as any;
 
       render(<HomePage />);
 
@@ -455,7 +456,7 @@ describe('Homepage Translation Dropdown', () => {
       expect(window.location.href).toContain('Romans%208%3A28');
 
       // Restore original location
-      window.location = originalLocation;
+      window.location = originalLocation as any;
     });
   });
 
@@ -627,4 +628,3 @@ describe('Homepage Translation Dropdown', () => {
       });
     });
   });
-});

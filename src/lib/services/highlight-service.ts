@@ -1,165 +1,92 @@
-import { getFirebase } from '../firebase';
-import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, updateDoc, Timestamp } from 'firebase/firestore';
 import type { Highlight, HighlightColor } from '../types';
+import { getApiUrl } from '../api-config';
+import { getAuthToken } from '../client-auth';
+
+async function apiCall<T = unknown>(path: string, options?: RequestInit): Promise<T> {
+  const token = await getAuthToken();
+  const res = await fetch(getApiUrl(path), {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options?.headers || {}),
+    },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error((data as any).error || 'Request failed');
+  return data as T;
+}
 
 export class HighlightService {
-  private getDb() {
-    const { db } = getFirebase();
-    if (!db) {
-      throw new Error('Firebase not initialized');
-    }
-    return db;
+  async getHighlights(_userId: string, translationId?: string, book?: string, chapter?: number): Promise<Highlight[]> {
+    const params = new URLSearchParams();
+    if (translationId) params.set('translationId', translationId);
+    if (book) params.set('book', book);
+    if (chapter !== undefined) params.set('chapter', String(chapter));
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const data = await apiCall<{ highlights: any[] }>(`/api/highlights/${query}`);
+    return data.highlights.map(row => ({
+      id: row.id,
+      userId: row.user_id,
+      translationId: row.translation_id,
+      book: row.book,
+      chapter: row.chapter,
+      verse: row.verse,
+      color: row.color,
+      note: row.note,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+    }));
   }
 
-  async getHighlights(
-    userId: string,
-    translationId?: string,
-    book?: string,
-    chapter?: number
-  ): Promise<Highlight[]> {
-    const db = this.getDb();
-    const highlightsRef = collection(db, 'users', userId, 'highlights');
-    
-    const conditions = [];
-    if (translationId) {
-      conditions.push(where('translationId', '==', translationId));
-    }
-    if (book) {
-      conditions.push(where('book', '==', book));
-    }
-    if (chapter !== undefined) {
-      conditions.push(where('chapter', '==', chapter));
-    }
-
-    const q = conditions.length > 0 
-      ? query(highlightsRef, ...conditions)
-      : query(highlightsRef);
-
-    const snapshot = await getDocs(q);
-    
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-    })) as Highlight[];
+  async getHighlight(_userId: string, translationId: string, book: string, chapter: number, verse: number): Promise<Highlight | null> {
+    const highlights = await this.getHighlights(_userId, translationId, book, chapter);
+    return highlights.find(h => h.verse === verse) || null;
   }
 
-  async getHighlight(
-    userId: string,
-    translationId: string,
-    book: string,
-    chapter: number,
-    verse: number
-  ): Promise<Highlight | null> {
-    const db = this.getDb();
-    const highlightsRef = collection(db, 'users', userId, 'highlights');
-    const q = query(
-      highlightsRef,
-      where('translationId', '==', translationId),
-      where('book', '==', book),
-      where('chapter', '==', chapter),
-      where('verse', '==', verse)
-    );
-    
-    const snapshot = await getDocs(q);
-    if (snapshot.empty) return null;
-    
-    const doc = snapshot.docs[0];
-    return {
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-    } as Highlight;
+  async addHighlight(_userId: string, highlight: Omit<Highlight, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+    const data = await apiCall<{ id: string }>('/api/highlights/', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'add',
+        highlight: {
+          translationId: highlight.translationId,
+          book: highlight.book,
+          chapter: highlight.chapter,
+          verse: highlight.verse,
+          color: highlight.color,
+          note: highlight.note,
+        },
+      }),
+    });
+    return data.id;
   }
 
-  async addHighlight(
-    userId: string,
-    highlight: Omit<Highlight, 'id' | 'createdAt' | 'updatedAt'>
-  ): Promise<string> {
-    const db = this.getDb();
-    
-    // Check if highlight already exists for this verse
-    const existing = await this.getHighlight(
-      userId,
-      highlight.translationId,
-      highlight.book,
-      highlight.chapter,
-      highlight.verse
-    );
-
-    const now = new Date();
-    const highlightData = {
-      ...highlight,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    if (existing) {
-      // Update existing highlight
-      await updateDoc(doc(db, 'users', userId, 'highlights', existing.id), {
-        color: highlight.color,
-        note: highlight.note,
-        updatedAt: now,
-      });
-      return existing.id;
-    } else {
-      // Create new highlight
-      const highlightsRef = collection(db, 'users', userId, 'highlights');
-      const docRef = doc(highlightsRef);
-      await setDoc(docRef, {
-        ...highlightData,
-        createdAt: Timestamp.fromDate(now),
-        updatedAt: Timestamp.fromDate(now),
-      });
-      return docRef.id;
-    }
-  }
-
-  async removeHighlight(
-    userId: string,
-    highlightId: string
-  ): Promise<void> {
-    const db = this.getDb();
-    await deleteDoc(doc(db, 'users', userId, 'highlights', highlightId));
-  }
-
-  async removeHighlightByVerse(
-    userId: string,
-    translationId: string,
-    book: string,
-    chapter: number,
-    verse: number
-  ): Promise<void> {
-    const highlight = await this.getHighlight(userId, translationId, book, chapter, verse);
-    if (highlight) {
-      await this.removeHighlight(userId, highlight.id);
-    }
-  }
-
-  async updateHighlightColor(
-    userId: string,
-    highlightId: string,
-    color: HighlightColor
-  ): Promise<void> {
-    const db = this.getDb();
-    await updateDoc(doc(db, 'users', userId, 'highlights', highlightId), {
-      color,
-      updatedAt: Timestamp.fromDate(new Date()),
+  async removeHighlight(_userId: string, highlightId: string): Promise<void> {
+    await apiCall('/api/highlights/', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'remove', highlightId }),
     });
   }
 
-  async updateHighlightNote(
-    userId: string,
-    highlightId: string,
-    note: string
-  ): Promise<void> {
-    const db = this.getDb();
-    await updateDoc(doc(db, 'users', userId, 'highlights', highlightId), {
-      note,
-      updatedAt: Timestamp.fromDate(new Date()),
+  async removeHighlightByVerse(_userId: string, translationId: string, book: string, chapter: number, verse: number): Promise<void> {
+    await apiCall('/api/highlights/', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'removeByVerse', translationId, book, chapter, verse }),
+    });
+  }
+
+  async updateHighlightColor(_userId: string, highlightId: string, color: HighlightColor): Promise<void> {
+    await apiCall('/api/highlights/', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'updateColor', highlightId, color }),
+    });
+  }
+
+  async updateHighlightNote(_userId: string, highlightId: string, note: string): Promise<void> {
+    await apiCall('/api/highlights/', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'updateNote', highlightId, note }),
     });
   }
 }
-

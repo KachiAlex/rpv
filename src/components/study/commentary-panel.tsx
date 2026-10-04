@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import { getApiUrl } from '@/lib/api-config';
 
 interface CommentaryEntryDto {
   id: string;
@@ -44,7 +45,7 @@ export function CommentaryPanel({ translationId, book, chapter, verse }: Comment
       verse: String(verse),
     });
 
-    fetch(`/api/commentary?${params.toString()}`)
+    fetch(getApiUrl(`/api/commentary/?${params.toString()}`))
       .then(async (res) => {
         if (!res.ok) throw new Error('Unable to load commentary');
         const data = await res.json();

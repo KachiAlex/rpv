@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AppShell } from '@/components/layout/app-shell';
+import { SplashScreen } from '@/components/splash-screen';
 import { NetworkStatusIndicator } from '@/components/network-status';
 import { PWAInstaller } from '@/components/pwa/pwa-installer';
 import { ServiceWorkerProvider } from '@/components/providers/service-worker-provider';
@@ -25,7 +26,12 @@ export const metadata: Metadata = {
 };
 
 export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   themeColor: '#0B1030',
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -34,9 +40,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ServiceWorkerProvider />
         <MobilePerformanceProvider />
-        <AppShell>
-          {children}
-        </AppShell>
+        <SplashScreen>
+          <AppShell>
+            {children}
+          </AppShell>
+        </SplashScreen>
         <NetworkStatusIndicator />
         <PWAInstaller />
       </body>

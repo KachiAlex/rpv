@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { BookCard } from './book-card';
 import type { Translation } from '../../lib/types';
+import { getApiUrl } from '../../lib/api-config';
 
 interface TranslationGroupProps {
   translation: Translation;
@@ -19,6 +20,7 @@ export function TranslationGroup({
 }: TranslationGroupProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const books = translation.books || [];
   const publishedCount = books.filter(book => book.published !== false).length;
@@ -64,6 +66,33 @@ export function TranslationGroup({
     }
   };
 
+  const handleExport = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const response = await fetch(getApiUrl(`/api/r2/translations/${encodeURIComponent(translation.id)}/?full=true`));
+      const data = await response.json();
+      if (!data.translation) {
+        throw new Error('Failed to fetch translation for export');
+      }
+
+      const blob = new Blob([JSON.stringify(data.translation, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${translation.id}-full-export.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting translation:', error);
+      alert(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className={`bg-gray-50 rounded-lg border border-gray-200 ${className}`}>
       {/* Translation Header */}
@@ -102,36 +131,51 @@ export function TranslationGroup({
           </div>
 
           {/* Bulk Actions */}
-          {onBulkUpdate && totalCount > 1 && (
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={handleBulkPublish}
-                disabled={allPublished || isProcessingBulk}
-                className={`
-                  px-3 py-1 text-sm rounded border transition-colors
-                  ${allPublished || isProcessingBulk
-                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                    : 'bg-green-600 text-white border-green-600 hover:bg-green-700'
-                  }
-                `}
-              >
-                {isProcessingBulk ? 'Processing...' : 'Publish All'}
-              </button>
-              <button
-                onClick={handleBulkUnpublish}
-                disabled={nonePublished || isProcessingBulk}
-                className={`
-                  px-3 py-1 text-sm rounded border transition-colors
-                  ${nonePublished || isProcessingBulk
-                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                    : 'bg-red-600 text-white border-red-600 hover:bg-red-700'
-                  }
-                `}
-              >
-                {isProcessingBulk ? 'Processing...' : 'Unpublish All'}
-              </button>
-            </div>
-          )}
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleExport}
+              disabled={isExporting}
+              className={`
+                px-3 py-1 text-sm rounded border transition-colors
+                ${isExporting
+                  ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                  : 'bg-brand-600 text-white border-brand-600 hover:bg-brand-700'
+                }
+              `}
+            >
+              {isExporting ? 'Exporting...' : 'Export All'}
+            </button>
+            {onBulkUpdate && totalCount > 1 && (
+              <>
+                <button
+                  onClick={handleBulkPublish}
+                  disabled={allPublished || isProcessingBulk}
+                  className={`
+                    px-3 py-1 text-sm rounded border transition-colors
+                    ${allPublished || isProcessingBulk
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-green-600 text-white border-green-600 hover:bg-green-700'
+                    }
+                  `}
+                >
+                  {isProcessingBulk ? 'Processing...' : 'Publish All'}
+                </button>
+                <button
+                  onClick={handleBulkUnpublish}
+                  disabled={nonePublished || isProcessingBulk}
+                  className={`
+                    px-3 py-1 text-sm rounded border transition-colors
+                    ${nonePublished || isProcessingBulk
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-red-600 text-white border-red-600 hover:bg-red-700'
+                    }
+                  `}
+                >
+                  {isProcessingBulk ? 'Processing...' : 'Unpublish All'}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Sparkles, ThumbsUp, ThumbsDown, HelpCircle, Send } from 'lucide-react';
+import { getApiUrl } from '@/lib/api-config';
 
 // Enhanced types for conversational AI
 interface BibleVerse {
@@ -88,7 +89,7 @@ export function ConversationalBibleSearch() {
 
   const loadConversationHistory = async () => {
     try {
-      const historyResponse = await fetch(`/api/bible-search/conversation/history?sessionId=${sessionId}`);
+      const historyResponse = await fetch(getApiUrl(`/api/bible-search/conversation/history/?sessionId=${sessionId}`));
       if (historyResponse.ok) {
         const history = await historyResponse.json();
         setConversationHistory(history);
@@ -114,7 +115,7 @@ export function ConversationalBibleSearch() {
         }
       };
 
-      const apiResponse = await fetch('/api/bible-search/conversation', {
+      const apiResponse = await fetch(getApiUrl('/api/bible-search/conversation/'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -171,7 +172,7 @@ export function ConversationalBibleSearch() {
         additionalContext
       };
 
-      const apiResponse = await fetch('/api/bible-search/conversation/clarify', {
+      const apiResponse = await fetch(getApiUrl('/api/bible-search/conversation/clarify/'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -198,7 +199,7 @@ export function ConversationalBibleSearch() {
 
   const handleFeedback = async (feedback: 'helpful' | 'not_helpful' | 'partially_helpful') => {
     try {
-      await fetch('/api/bible-search/conversation/feedback', {
+      await fetch(getApiUrl('/api/bible-search/conversation/feedback/'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
