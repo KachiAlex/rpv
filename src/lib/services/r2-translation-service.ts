@@ -1,8 +1,84 @@
 import { getApiUrl } from '../api-config';
 import { getAuthToken } from '../client-auth';
+import { IndexedDBCache } from '../cache/indexeddb-cache';
 import type { Translation, Book, Chapter } from '../types';
 
+// IndexedDB write-through cache so the app keeps working offline:
+// every successful fetch is persisted, and failed fetches fall back to the
+// last synced copy. After the manifest loads online, a low-priority
+// background prefetch downloads any missing books so a machine used for
+// projection ends up with the full Bible cached locally.
 export class R2TranslationService {
+  private cache = new IndexedDBCache();
+  private prefetchStarted = false;
+
+  private async cacheBook(translationId: string, book: Book): Promise<void> {
+    try {
+      const existing = await this.cache.getTranslation(translationId);
+      const books = (existing?.books ?? []).filter(b => b.name !== book.name);
+      books.push(book);
+      await this.cache.saveTranslation({
+        ...(existing ?? { id: translationId, name: translationId }),
+        books,
+      } as Translation);
+    } catch {
+      /* cache unavailable */
+    }
+  }
+
+  private async cachedBook(translationId: string, bookName: string): Promise<Book | null> {
+    try {
+      const cached = await this.cache.getTranslation(translationId);
+      const book = cached?.books?.find(b => b.name === bookName);
+      return book && book.chapters?.length ? book : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async cacheManifest(translations: Translation[]): Promise<void> {
+    for (const t of translations) {
+      try {
+        const existing = await this.cache.getTranslation(t.id);
+        // Manifest book stubs carry no verses — keep any already-cached full
+        // content for matching book names, and preserve cached books that are
+        // absent from the manifest.
+        const mergedBooks = (t.books ?? []).map(b => {
+          const full = existing?.books?.find(eb => eb.name === b.name && eb.chapters?.length);
+          return full ?? b;
+        });
+        for (const eb of existing?.books ?? []) {
+          if (eb.chapters?.length && !mergedBooks.some(b => b.name === eb.name)) {
+            mergedBooks.push(eb);
+          }
+        }
+        await this.cache.saveTranslation({ ...t, books: mergedBooks });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  private schedulePrefetch(translations: Translation[]): void {
+    if (this.prefetchStarted || typeof window === 'undefined') return;
+    this.prefetchStarted = true;
+    setTimeout(async () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      for (const t of translations) {
+        for (const b of t.books ?? []) {
+          try {
+            const cached = await this.cachedBook(t.id, b.name);
+            if (cached) continue;
+            await this.getBookContent(t.id, b.name);
+            await new Promise(r => setTimeout(r, 250));
+          } catch {
+            /* offline mid-prefetch — resume next session */
+            return;
+          }
+        }
+      }
+    }, 3000);
+  }
 
   private async authHeaders(extra: Record<string, string> = {}): Promise<Record<string, string>> {
     const token = await getAuthToken();
@@ -15,12 +91,17 @@ export class R2TranslationService {
   async getTranslation(id: string): Promise<Translation | null> {
     try {
       const res = await fetch(getApiUrl(`/api/r2/translations/${encodeURIComponent(id)}/`));
-      if (!res.ok) return null;
+      if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
+      if (data.translation) await this.cache.saveTranslation(data.translation).catch(() => {});
       return data.translation || null;
     } catch (error) {
       console.error('Error getting translation:', error);
-      return null;
+      try {
+        return await this.cache.getTranslation(id);
+      } catch {
+        return null;
+      }
     }
   }
 
@@ -28,11 +109,24 @@ export class R2TranslationService {
     try {
       const url = getApiUrl(`/api/r2/translations/${encodeURIComponent(id)}/?full=${loadContent}`);
       const res = await fetch(url);
-      if (!res.ok) return null;
+      if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
+      if (data.translation) {
+        if (loadContent) {
+          await this.cache.saveTranslation(data.translation).catch(() => {});
+        } else {
+          await this.cacheManifest([data.translation]).catch(() => {});
+        }
+      }
       return data.translation || null;
     } catch (error) {
       console.error('Error getting translation (lazy):', error);
+      try {
+        const cached = await this.cache.getTranslation(id);
+        if (cached) return cached;
+      } catch {
+        /* fall through */
+      }
       return null;
     }
   }
@@ -45,12 +139,13 @@ export class R2TranslationService {
       const res = await fetch(
         getApiUrl(`/api/r2/translations/${encodeURIComponent(translationId)}/books/${encodeURIComponent(bookName)}/`)
       );
-      if (!res.ok) return null;
+      if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
+      if (data.book) await this.cacheBook(translationId, data.book);
       return data.book || null;
     } catch (error) {
       console.error('Error getting book content:', error);
-      return null;
+      return this.cachedBook(translationId, bookName);
     }
   }
 
@@ -67,12 +162,19 @@ export class R2TranslationService {
   async getAllTranslations(): Promise<Translation[]> {
     try {
       const res = await fetch(getApiUrl('/api/r2/translations/'));
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
-      return data.translations || [];
+      const translations: Translation[] = data.translations || [];
+      await this.cacheManifest(translations).catch(() => {});
+      this.schedulePrefetch(translations);
+      return translations;
     } catch (error) {
       console.error('Error getting all translations:', error);
-      return [];
+      try {
+        return await this.cache.getAllTranslations();
+      } catch {
+        return [];
+      }
     }
   }
 
