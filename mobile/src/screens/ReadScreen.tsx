@@ -72,6 +72,7 @@ export default function ReadScreen(): React.ReactElement {
   const [highlights, setHighlights] = useState<VerseHighlight[]>([]);
   const [noteVerse, setNoteVerse] = useState<number | null>(null);
   const [noteText, setNoteText] = useState('');
+  const [selectedVerses, setSelectedVerses] = useState<number[]>([]);
   const verseListRef = useRef<FlatList>(null);
 
   const mode: Mode = chapter !== null ? 'verses' : bookName ? 'chapters' : 'books';
@@ -200,6 +201,7 @@ export default function ReadScreen(): React.ReactElement {
 
   useEffect(() => {
     // Stop playback when leaving verses mode or changing chapter
+    setSelectedVerses([]);
     return () => audioBible.stop();
   }, [translationId, bookName, chapter]);
 
@@ -272,12 +274,54 @@ export default function ReadScreen(): React.ReactElement {
   const handleCopyVerse = useCallback(
     async (verse: { number: number; text: string }) => {
       await Clipboard.setStringAsync(
-        `${bookName} ${chapter}:${verse.number} (${translationId})\n\n${verse.text}`
+        `${bookName} ${chapter}:${verse.number} (${translationId.toUpperCase()})\n\n${verse.text}`
       );
       Alert.alert('Copied', `${bookName} ${chapter}:${verse.number} copied to clipboard`);
     },
     [bookName, chapter, translationId]
   );
+
+  // ---------- Verse multiselect ----------
+
+  const toggleVerseSelection = useCallback((n: number) => {
+    setSelectedVerses((prev) =>
+      prev.includes(n) ? prev.filter((v) => v !== n) : [...prev, n]
+    );
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedVerses([]), []);
+
+  // Compress a sorted verse list into reference ranges: [1,2,3,5] -> "1-3,5"
+  const verseRangeLabel = useCallback((nums: number[]): string => {
+    const sorted = [...nums].sort((a, b) => a - b);
+    const parts: string[] = [];
+    let start = sorted[0];
+    let prev = sorted[0];
+    for (let i = 1; i <= sorted.length; i++) {
+      if (sorted[i] !== prev + 1) {
+        parts.push(start === prev ? `${start}` : `${start}-${prev}`);
+        start = sorted[i];
+      }
+      prev = sorted[i];
+    }
+    return parts.join(',');
+  }, []);
+
+  const selectionRef = useMemo(() => {
+    if (!selectedVerses.length) return '';
+    return `${bookName} ${chapter}:${verseRangeLabel(selectedVerses)} (${translationId.toUpperCase()})`;
+  }, [selectedVerses, bookName, chapter, translationId, verseRangeLabel]);
+
+  const copySelected = useCallback(async () => {
+    const verses = (chapterData?.verses || []).filter((v) =>
+      selectedVerses.includes(v.number)
+    );
+    if (!verses.length) return;
+    const body = verses.map((v) => v.text).join('\n');
+    await Clipboard.setStringAsync(`${selectionRef}\n\n${body}`);
+    Alert.alert('Copied', `${selectionRef} copied to clipboard`);
+    clearSelection();
+  }, [chapterData, selectedVerses, selectionRef, clearSelection]);
 
   const handleAudioToggle = useCallback(() => {
     const verses = chapterData?.verses || [];
@@ -501,23 +545,40 @@ export default function ReadScreen(): React.ReactElement {
           const saved = bookmarkedKeys.has(key);
           const speaking = speakingVerse === item.number;
           const hl = highlightByVerse.get(item.number);
+          const isSelected = selectedVerses.includes(item.number);
+          const selectMode = selectedVerses.length > 0;
           return (
-            <View
+            <TouchableOpacity
+              activeOpacity={selectMode ? 0.7 : 1}
+              onPress={selectMode ? () => toggleVerseSelection(item.number) : undefined}
+              onLongPress={() => toggleVerseSelection(item.number)}
+              delayLongPress={250}
               style={[
                 styles.verseRow,
                 speaking && styles.verseRowSpeaking,
                 hl && { backgroundColor: HIGHLIGHT_BG[hl.color] || HIGHLIGHT_BG.yellow },
+                isSelected && styles.verseRowSelected,
               ]}
             >
-              <Text style={styles.verseNum}>{item.number}</Text>
+              <View style={styles.verseNumCol}>
+                {selectMode ? (
+                  <MaterialCommunityIcons
+                    name={isSelected ? 'check-circle' : 'circle-outline'}
+                    size={16}
+                    color={isSelected ? colors.red600 : colors.inkFaint}
+                  />
+                ) : null}
+                <Text style={styles.verseNum}>{item.number}</Text>
+              </View>
               <View style={styles.verseBody}>
                 <Text
-                  selectable
+                  selectable={!selectMode}
                   selectionColor={colors.lav}
                   style={[styles.verseText, { fontSize, lineHeight: fontSize * 1.55 }]}
                 >
                   {item.text}
                 </Text>
+                {!selectMode && (
                 <View style={styles.verseActions}>
                   <TouchableOpacity onPress={() => handleBookmark(item)} style={styles.verseAction}>
                     <MaterialCommunityIcons
@@ -528,6 +589,9 @@ export default function ReadScreen(): React.ReactElement {
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => handleCopyVerse(item)} style={styles.verseAction}>
                     <MaterialCommunityIcons name="content-copy" size={15} color={colors.inkFaint} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => toggleVerseSelection(item.number)} style={styles.verseAction}>
+                    <MaterialCommunityIcons name="checkbox-multiple-marked-outline" size={16} color={colors.inkFaint} />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => handleHighlight(item.number)} style={styles.verseAction}>
                     <MaterialCommunityIcons
@@ -562,14 +626,33 @@ export default function ReadScreen(): React.ReactElement {
                     />
                   </TouchableOpacity>
                 </View>
+                )}
               </View>
-            </View>
+            </TouchableOpacity>
           );
         }}
         ListEmptyComponent={
           <Empty icon="book-open-outline" message="No verses in this chapter yet." />
         }
       />
+
+      {selectedVerses.length > 0 && (
+        <View style={styles.selectionBar}>
+          <View style={styles.selectionInfo}>
+            <Text style={styles.selectionCount}>{selectedVerses.length} selected</Text>
+            <Text style={styles.selectionRef} numberOfLines={1}>
+              {selectionRef}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={clearSelection} style={styles.selectionCancel}>
+            <Text style={styles.selectionCancelText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={copySelected} style={styles.selectionCopy}>
+            <MaterialCommunityIcons name="content-copy" size={15} color={colors.white} />
+            <Text style={styles.selectionCopyText}>Copy</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <Modal visible={noteVerse !== null} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
@@ -751,12 +834,25 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     gap: 12,
   },
+  verseNumCol: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
+    marginTop: 3,
+  },
   verseNum: {
     fontSize: 12,
     fontWeight: '700',
     color: colors.red600,
-    marginTop: 3,
     minWidth: 22,
+  },
+  verseRowSelected: {
+    backgroundColor: colors.red50,
+    borderRadius: radius.input,
+    borderWidth: 1,
+    borderColor: colors.red600,
+    padding: 6,
+    marginHorizontal: -6,
   },
   verseBody: {
     flex: 1,
@@ -764,6 +860,31 @@ const styles = StyleSheet.create({
   verseText: {
     color: colors.ink,
   },
+  selectionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.navy800,
+    borderTopWidth: 1,
+    borderTopColor: colors.navy600,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  selectionInfo: { flex: 1 },
+  selectionCount: { fontSize: 13, fontWeight: '700', color: colors.white },
+  selectionRef: { fontSize: 11, color: colors.lavSoft, marginTop: 1 },
+  selectionCancel: { paddingHorizontal: 10, paddingVertical: 8 },
+  selectionCancelText: { fontSize: 13, fontWeight: '600', color: colors.lavSoft },
+  selectionCopy: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.red600,
+    borderRadius: radius.input,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  selectionCopyText: { fontSize: 13, fontWeight: '700', color: colors.white },
   verseRowSpeaking: {
     backgroundColor: colors.red50,
     borderRadius: radius.input,

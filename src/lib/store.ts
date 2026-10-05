@@ -146,11 +146,10 @@ export const useBibleStore = create<BibleState>((set, get) => {
         };
         
         if (translations.length === 0) {
-          // No translations: try to import built-in seeds (KJV/ASV), then fallback to sample
+          // No translations: try to import built-in seed (KJV), then fallback to sample
           try {
             const seeds: Array<{ url: string }> = [
               { url: '/translations/kjv.json' },
-              { url: '/translations/asv.json' },
             ];
             const loaded: Translation[] = [];
             for (const seed of seeds) {
@@ -185,10 +184,10 @@ export const useBibleStore = create<BibleState>((set, get) => {
         // Ensure RPV is present and at the beginning
         const translationsWithRPV = await ensureRPVTranslation(translations);
 
-        // If only sample or missing built-in seeds, try to fetch and merge KJV/ASV once
+        // If only sample or missing the built-in seed, try to fetch and merge KJV once
         try {
           const haveIds = new Set(translationsWithRPV.map(t => t.id));
-          const wanted = ['kjv', 'asv'];
+          const wanted = ['kjv'];
           const missing = wanted.filter(id => !haveIds.has(id));
           const newlyLoaded: Translation[] = [];
           if (missing.length > 0) {
