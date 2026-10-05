@@ -179,6 +179,17 @@ export async function getTranslations(forceRefresh = false): Promise<RpvTranslat
   }
 }
 
+export async function invalidateBookCache(
+  translationId: string,
+  bookName: string
+): Promise<void> {
+  await AsyncStorage.removeItem(bookKey(translationId, bookName)).catch(() => {});
+}
+
+export function clearTranslationsCache(): void {
+  translationsCache = null;
+}
+
 export async function getBook(translationId: string, bookName: string): Promise<RpvBook> {
   const key = bookKey(translationId, bookName);
   try {

@@ -1,41 +1,552 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '../theme';
-import { RpvCard, Loading, Empty, textStyles } from '../components/Rpv';
+import { RpvCard, Loading, Empty, FieldLabel, textStyles } from '../components/Rpv';
 import { useAuthStore } from '../store/authStore';
 import { useAdminStore } from '../store/adminStore';
+import { getTranslations, RpvTranslation } from '../services/bible';
+import {
+  updateVerse,
+  setBookPublished,
+  setBookIntroduction,
+  getHighlights,
+  addHighlight,
+  deleteHighlight,
+  AdminHighlight,
+} from '../services/adminApi';
 
-const ADMIN_TOOLS = [
-  {
-    icon: 'file-document-outline' as const,
-    title: 'Blog Management',
-    body: 'Create, edit, and publish blog posts — manage via the web admin.',
-  },
-  {
-    icon: 'book-open-page-variant' as const,
-    title: 'Publication Management',
-    body: 'Manage Bible translations and publications at rpvbible.com/admin.',
-  },
-  {
-    icon: 'chart-line' as const,
-    title: 'Analytics',
-    body: 'View app usage and user statistics on the web dashboard.',
-  },
-  {
-    icon: 'account-multiple-outline' as const,
-    title: 'User Management',
-    body: 'Manage users and permissions on the web dashboard.',
-  },
+type AdminTab = 'edit' | 'publications' | 'highlights' | 'blog' | 'banner';
+
+const TABS: { id: AdminTab; label: string; description: string }[] = [
+  { id: 'edit', label: 'Upload & Edit', description: 'Import translations or make quick edits' },
+  { id: 'publications', label: 'Manage Publications', description: 'Control published books and metadata' },
+  { id: 'highlights', label: 'Featured Highlights', description: 'Curate the featured homepage content' },
+  { id: 'blog', label: 'Blog Management', description: 'Publish and schedule blog articles' },
+  { id: 'banner', label: 'Banner Settings', description: 'Update the homepage announcement banner' },
 ];
+
+// ---------- Upload & Edit tab ----------
+
+function EditTab({ translations }: { translations: RpvTranslation[] }): React.ReactElement {
+  const [translationId, setTranslationId] = useState(translations[0]?.id || 'RPV');
+  const [book, setBook] = useState('Romans');
+  const [chapter, setChapter] = useState('1');
+  const [verse, setVerse] = useState('1');
+  const [text, setText] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const selected = translations.find((t) => t.id === translationId);
+
+  const save = async () => {
+    const ch = parseInt(chapter, 10);
+    const vs = parseInt(verse, 10);
+    if (!book.trim() || !ch || !vs || !text.trim()) {
+      Alert.alert('Missing fields', 'Enter a book, chapter, verse, and text.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateVerse({
+        translationId,
+        translationName: selected?.name,
+        book: book.trim(),
+        chapter: ch,
+        verse: vs,
+        text: text.trim(),
+      });
+      Alert.alert('Saved', `${book.trim()} ${ch}:${vs} saved successfully.`);
+      setText('');
+    } catch (e) {
+      Alert.alert('Save failed', e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <View style={styles.tabBody}>
+      <RpvCard>
+        <Text style={styles.sectionTitle}>Quick Edit Verse</Text>
+        <Text style={textStyles.body}>
+          Update a single verse. The change merges into the stored translation —
+          all other books and verses are preserved.
+        </Text>
+
+        <FieldLabel>Translation</FieldLabel>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+          {translations.map((t) => (
+            <TouchableOpacity
+              key={t.id}
+              onPress={() => setTranslationId(t.id)}
+              style={[styles.chip, t.id === translationId && styles.chipActive]}
+            >
+              <Text style={[styles.chipText, t.id === translationId && styles.chipTextActive]}>
+                {t.id}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        <FieldLabel>Book</FieldLabel>
+        <TextInput style={styles.input} value={book} onChangeText={setBook} placeholder="e.g. Romans" />
+
+        <View style={styles.twoCol}>
+          <View style={styles.col}>
+            <FieldLabel>Chapter</FieldLabel>
+            <TextInput
+              style={styles.input}
+              value={chapter}
+              onChangeText={setChapter}
+              keyboardType="number-pad"
+            />
+          </View>
+          <View style={styles.col}>
+            <FieldLabel>Verse</FieldLabel>
+            <TextInput
+              style={styles.input}
+              value={verse}
+              onChangeText={setVerse}
+              keyboardType="number-pad"
+            />
+          </View>
+        </View>
+
+        <FieldLabel>Text</FieldLabel>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          value={text}
+          onChangeText={setText}
+          placeholder="Verse text…"
+          multiline
+        />
+
+        <TouchableOpacity
+          style={[styles.primaryBtn, saving && styles.btnDisabled]}
+          onPress={save}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color={colors.white} size="small" />
+          ) : (
+            <Text style={styles.primaryBtnText}>Save Verse</Text>
+          )}
+        </TouchableOpacity>
+      </RpvCard>
+
+      <RpvCard>
+        <View style={styles.infoRow}>
+          <MaterialCommunityIcons name="file-upload-outline" size={22} color={colors.navy800} />
+          <View style={styles.itemBody}>
+            <Text style={styles.itemTitle}>Document Upload</Text>
+            <Text style={textStyles.body}>
+              PDF/DOCX parsing runs on the web admin (rpvbible.com/admin). Verse
+              edits made here merge safely — single-book uploads no longer wipe
+              other books.
+            </Text>
+          </View>
+        </View>
+      </RpvCard>
+    </View>
+  );
+}
+
+// ---------- Manage Publications tab ----------
+
+function PublicationsTab({
+  translations,
+  onRefresh,
+}: {
+  translations: RpvTranslation[];
+  onRefresh: () => void;
+}): React.ReactElement {
+  const [translationId, setTranslationId] = useState(translations[0]?.id || 'RPV');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [introBook, setIntroBook] = useState<string | null>(null);
+  const [introText, setIntroText] = useState('');
+  const [savingIntro, setSavingIntro] = useState(false);
+
+  const translation = translations.find((t) => t.id === translationId) || translations[0];
+  const books = translation?.books || [];
+  const publishedCount = books.filter((b) => b.published !== false).length;
+
+  const toggle = async (bookName: string, published: boolean) => {
+    setBusy(bookName);
+    try {
+      await setBookPublished(translation.id, bookName, !published);
+      onRefresh();
+    } catch (e) {
+      Alert.alert('Update failed', e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const saveIntro = async (bookName: string) => {
+    setSavingIntro(true);
+    try {
+      await setBookIntroduction(translation.id, bookName, introText.trim());
+      setIntroBook(null);
+      onRefresh();
+    } catch (e) {
+      Alert.alert('Save failed', e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setSavingIntro(false);
+    }
+  };
+
+  if (!translation) {
+    return <Empty icon="book-off-outline" message="No translations loaded." />;
+  }
+
+  return (
+    <View style={styles.tabBody}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+        {translations.map((t) => (
+          <TouchableOpacity
+            key={t.id}
+            onPress={() => {
+              setTranslationId(t.id);
+              setIntroBook(null);
+            }}
+            style={[styles.chip, t.id === translation.id && styles.chipActive]}
+          >
+            <Text style={[styles.chipText, t.id === translation.id && styles.chipTextActive]}>
+              {t.id}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      <View style={styles.statsRow}>
+        <View style={styles.statBox}>
+          <Text style={styles.statNum}>{books.length}</Text>
+          <Text style={styles.statLabel}>Books</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={[styles.statNum, { color: '#1a7f37' }]}>{publishedCount}</Text>
+          <Text style={styles.statLabel}>Published</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={[styles.statNum, { color: colors.red600 }]}>
+            {books.length - publishedCount}
+          </Text>
+          <Text style={styles.statLabel}>Unpublished</Text>
+        </View>
+      </View>
+
+      {books.map((b) => {
+        const published = b.published !== false;
+        const isBusy = busy === b.name;
+        return (
+          <RpvCard key={b.name}>
+            <View style={styles.bookRow}>
+              <View style={styles.itemBody}>
+                <Text style={styles.itemTitle}>{b.name}</Text>
+                <Text style={styles.bookMeta}>
+                  {b.chapterCount} chapter{b.chapterCount === 1 ? '' : 's'}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.badge,
+                  { backgroundColor: published ? '#e6f4ea' : colors.red50 },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.badgeText,
+                    { color: published ? '#1a7f37' : colors.red600 },
+                  ]}
+                >
+                  {published ? 'Published' : 'Unpublished'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.bookActions}>
+              <TouchableOpacity
+                style={[styles.smallBtn, published ? styles.unpublishBtn : styles.publishBtn]}
+                onPress={() => toggle(b.name, published)}
+                disabled={isBusy}
+              >
+                {isBusy ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Text style={styles.smallBtnText}>
+                    {published ? 'Unpublish' : 'Publish'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.smallBtnOutline}
+                onPress={() => {
+                  setIntroBook(introBook === b.name ? null : b.name);
+                  setIntroText(b.introduction || '');
+                }}
+              >
+                <Text style={styles.smallBtnOutlineText}>Introduction</Text>
+              </TouchableOpacity>
+            </View>
+
+            {introBook === b.name && (
+              <View style={styles.introEditor}>
+                <FieldLabel>Book introduction</FieldLabel>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  value={introText}
+                  onChangeText={setIntroText}
+                  multiline
+                  placeholder="Optional introduction shown before the book…"
+                />
+                <TouchableOpacity
+                  style={[styles.primaryBtn, savingIntro && styles.btnDisabled]}
+                  onPress={() => saveIntro(b.name)}
+                  disabled={savingIntro}
+                >
+                  {savingIntro ? (
+                    <ActivityIndicator color={colors.white} size="small" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Save Introduction</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </RpvCard>
+        );
+      })}
+    </View>
+  );
+}
+
+// ---------- Featured Highlights tab ----------
+
+function HighlightsTab({ translations }: { translations: RpvTranslation[] }): React.ReactElement {
+  const [highlights, setHighlights] = useState<AdminHighlight[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [translationId, setTranslationId] = useState(translations[0]?.id || 'RPV');
+  const [book, setBook] = useState('');
+  const [chapter, setChapter] = useState('');
+  const [verse, setVerse] = useState('');
+  const [text, setText] = useState('');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setHighlights(await getHighlights());
+    } catch {
+      setHighlights([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const add = async () => {
+    const ch = parseInt(chapter, 10);
+    const vs = parseInt(verse, 10);
+    if (!book.trim() || !ch || !vs || !text.trim()) {
+      Alert.alert('Missing fields', 'Book, chapter, verse, and text are required.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await addHighlight({
+        translationId,
+        book: book.trim(),
+        chapter: ch,
+        verse: vs,
+        text: text.trim(),
+        title: title.trim() || undefined,
+        description: description.trim() || undefined,
+        order: highlights.length,
+      });
+      setShowForm(false);
+      setBook('');
+      setChapter('');
+      setVerse('');
+      setText('');
+      setTitle('');
+      setDescription('');
+      await load();
+    } catch (e) {
+      Alert.alert('Add failed', e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = (h: AdminHighlight) => {
+    Alert.alert('Remove highlight', `${h.book} ${h.chapter}:${h.verse}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteHighlight(h.id);
+            await load();
+          } catch (e) {
+            Alert.alert('Delete failed', e instanceof Error ? e.message : 'Unknown error');
+          }
+        },
+      },
+    ]);
+  };
+
+  return (
+    <View style={styles.tabBody}>
+      <TouchableOpacity style={styles.primaryBtn} onPress={() => setShowForm(!showForm)}>
+        <Text style={styles.primaryBtnText}>
+          {showForm ? 'Cancel' : '+ Add Highlight'}
+        </Text>
+      </TouchableOpacity>
+
+      {showForm && (
+        <RpvCard>
+          <Text style={styles.sectionTitle}>New Highlight</Text>
+          <FieldLabel>Translation</FieldLabel>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+            {translations.map((t) => (
+              <TouchableOpacity
+                key={t.id}
+                onPress={() => setTranslationId(t.id)}
+                style={[styles.chip, t.id === translationId && styles.chipActive]}
+              >
+                <Text style={[styles.chipText, t.id === translationId && styles.chipTextActive]}>
+                  {t.id}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <FieldLabel>Book</FieldLabel>
+          <TextInput style={styles.input} value={book} onChangeText={setBook} placeholder="e.g. Romans" />
+          <View style={styles.twoCol}>
+            <View style={styles.col}>
+              <FieldLabel>Chapter</FieldLabel>
+              <TextInput style={styles.input} value={chapter} onChangeText={setChapter} keyboardType="number-pad" />
+            </View>
+            <View style={styles.col}>
+              <FieldLabel>Verse</FieldLabel>
+              <TextInput style={styles.input} value={verse} onChangeText={setVerse} keyboardType="number-pad" />
+            </View>
+          </View>
+          <FieldLabel>Text</FieldLabel>
+          <TextInput style={[styles.input, styles.textArea]} value={text} onChangeText={setText} multiline placeholder="Verse text…" />
+          <FieldLabel>Title (optional)</FieldLabel>
+          <TextInput style={styles.input} value={title} onChangeText={setTitle} />
+          <FieldLabel>Description (optional)</FieldLabel>
+          <TextInput style={styles.input} value={description} onChangeText={setDescription} />
+          <TouchableOpacity style={[styles.primaryBtn, saving && styles.btnDisabled]} onPress={add} disabled={saving}>
+            {saving ? <ActivityIndicator color={colors.white} size="small" /> : <Text style={styles.primaryBtnText}>Add Highlight</Text>}
+          </TouchableOpacity>
+        </RpvCard>
+      )}
+
+      {loading ? (
+        <Loading label="Loading highlights…" />
+      ) : highlights.length === 0 ? (
+        <Empty icon="star-outline" message="No featured highlights yet." />
+      ) : (
+        highlights.map((h) => (
+          <RpvCard key={h.id}>
+            <View style={styles.bookRow}>
+              <View style={styles.itemBody}>
+                {!!h.title && <Text style={styles.itemTitle}>{h.title}</Text>}
+                <Text style={styles.bookMeta}>
+                  {h.translationId} · {h.book} {h.chapter}:{h.verse}
+                </Text>
+                <Text style={textStyles.body} numberOfLines={3}>
+                  {h.text}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => remove(h)} style={styles.deleteBtn}>
+                <MaterialCommunityIcons name="trash-can-outline" size={20} color={colors.red600} />
+              </TouchableOpacity>
+            </View>
+          </RpvCard>
+        ))
+      )}
+    </View>
+  );
+}
+
+// ---------- Info-only tabs ----------
+
+function InfoTab({
+  icon,
+  title,
+  body,
+}: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  title: string;
+  body: string;
+}): React.ReactElement {
+  return (
+    <View style={styles.tabBody}>
+      <RpvCard>
+        <View style={styles.infoRow}>
+          <View style={styles.iconWrap}>
+            <MaterialCommunityIcons name={icon} size={22} color={colors.red600} />
+          </View>
+          <View style={styles.itemBody}>
+            <Text style={styles.itemTitle}>{title}</Text>
+            <Text style={textStyles.body}>{body}</Text>
+          </View>
+        </View>
+      </RpvCard>
+    </View>
+  );
+}
+
+// ---------- Screen ----------
 
 export default function AdminScreen(): React.ReactElement {
   const { user } = useAuthStore();
   const { isAdmin, adminUser, loading, getAdminUser } = useAdminStore();
+  const [activeTab, setActiveTab] = useState<AdminTab>('edit');
+  const [translations, setTranslations] = useState<RpvTranslation[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (user) getAdminUser(user.uid);
   }, [user]);
+
+  const loadManifest = useCallback(async (force = false) => {
+    setRefreshing(true);
+    try {
+      setTranslations(await getTranslations(force));
+    } catch {
+      // keep last-known list
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAdmin) loadManifest();
+  }, [isAdmin, loadManifest]);
+
+  const activeDescription = useMemo(
+    () => TABS.find((t) => t.id === activeTab)?.description || '',
+    [activeTab]
+  );
 
   if (!user) {
     return (
@@ -54,7 +565,7 @@ export default function AdminScreen(): React.ReactElement {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.hero}>
         <View style={styles.shieldRow}>
           <MaterialCommunityIcons name="shield-crown" size={26} color={colors.red600} />
@@ -63,28 +574,62 @@ export default function AdminScreen(): React.ReactElement {
         <Text style={styles.heroSub}>{adminUser?.email || user.email}</Text>
       </View>
 
-      <View style={styles.pad}>
-        {ADMIN_TOOLS.map((tool) => (
-          <RpvCard key={tool.title}>
-            <View style={styles.row}>
-              <View style={styles.iconWrap}>
-                <MaterialCommunityIcons name={tool.icon} size={22} color={colors.red600} />
-              </View>
-              <View style={styles.itemBody}>
-                <Text style={styles.itemTitle}>{tool.title}</Text>
-                <Text style={textStyles.body}>{tool.body}</Text>
-              </View>
-            </View>
-          </RpvCard>
-        ))}
-
-        <RpvCard>
-          <Text style={styles.infoTitle}>Admin Info</Text>
-          <Text style={textStyles.body}>Role: {adminUser?.role || 'admin'}</Text>
-          <Text style={textStyles.body}>Email: {adminUser?.email || user.email}</Text>
-        </RpvCard>
+      {/* Tab bar — mirrors the web admin's section nav */}
+      <View style={styles.tabBarWrap}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBar}>
+          {TABS.map((tab) => {
+            const active = tab.id === activeTab;
+            return (
+              <TouchableOpacity
+                key={tab.id}
+                onPress={() => setActiveTab(tab.id)}
+                style={[styles.tabPill, active && styles.tabPillActive]}
+              >
+                <Text style={[styles.tabPillText, active && styles.tabPillTextActive]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+        <Text style={styles.tabDesc}>{activeDescription}</Text>
       </View>
-    </ScrollView>
+
+      <ScrollView
+        style={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadManifest(true)}
+            tintColor={colors.red600}
+          />
+        }
+      >
+        {activeTab === 'edit' && <EditTab translations={translations} />}
+        {activeTab === 'publications' && (
+          <PublicationsTab
+            translations={translations}
+            onRefresh={() => loadManifest(true)}
+          />
+        )}
+        {activeTab === 'highlights' && <HighlightsTab translations={translations} />}
+        {activeTab === 'blog' && (
+          <InfoTab
+            icon="file-document-outline"
+            title="Blog Management"
+            body="Blog articles live in the site's database and are managed on the web admin at rpvbible.com/admin — there is no public mobile API for them yet."
+          />
+        )}
+        {activeTab === 'banner' && (
+          <InfoTab
+            icon="bullhorn-outline"
+            title="Banner Settings"
+            body="The homepage announcement banner is configured on the web admin at rpvbible.com/admin."
+          />
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -98,8 +643,121 @@ const styles = StyleSheet.create({
   },
   shieldRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   heroSub: { color: colors.lavSoft, fontSize: 13, marginTop: 6 },
-  pad: { padding: spacing.md },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  scroll: { flex: 1 },
+
+  tabBarWrap: {
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingTop: 10,
+  },
+  tabBar: { paddingHorizontal: spacing.md, gap: 8, paddingBottom: 10 },
+  tabPill: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: colors.white,
+  },
+  tabPillActive: {
+    backgroundColor: colors.red600,
+    borderColor: colors.red600,
+  },
+  tabPillText: { fontSize: 13, fontWeight: '600', color: colors.inkSoft },
+  tabPillTextActive: { color: colors.white },
+  tabDesc: {
+    fontSize: 12,
+    color: colors.inkFaint,
+    paddingHorizontal: spacing.md,
+    paddingBottom: 8,
+  },
+
+  tabBody: { padding: spacing.md, gap: spacing.sm },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.ink },
+
+  chipRow: { flexDirection: 'row', marginBottom: spacing.sm },
+  chip: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8,
+    backgroundColor: colors.white,
+  },
+  chipActive: { borderColor: colors.red600, backgroundColor: colors.red50 },
+  chipText: { fontSize: 12, fontWeight: '600', color: colors.inkSoft },
+  chipTextActive: { color: colors.red600 },
+
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.input,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: colors.ink,
+    backgroundColor: colors.white,
+    marginBottom: spacing.sm,
+  },
+  textArea: { minHeight: 96, textAlignVertical: 'top' },
+  twoCol: { flexDirection: 'row', gap: 10 },
+  col: { flex: 1 },
+
+  primaryBtn: {
+    backgroundColor: colors.red600,
+    borderRadius: radius.input,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  primaryBtnText: { color: colors.white, fontSize: 14, fontWeight: '700' },
+  btnDisabled: { opacity: 0.6 },
+
+  statsRow: { flexDirection: 'row', gap: 10 },
+  statBox: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  statNum: { fontSize: 20, fontWeight: '800', color: colors.navy800 },
+  statLabel: { fontSize: 11, color: colors.inkFaint, marginTop: 2 },
+
+  bookRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  itemBody: { flex: 1 },
+  itemTitle: { fontSize: 15, fontWeight: '700', color: colors.ink, marginBottom: 2 },
+  bookMeta: { fontSize: 12, color: colors.inkFaint },
+  badge: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
+  badgeText: { fontSize: 11, fontWeight: '700' },
+
+  bookActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  smallBtn: {
+    borderRadius: radius.input,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    minWidth: 92,
+    alignItems: 'center',
+  },
+  publishBtn: { backgroundColor: '#1a7f37' },
+  unpublishBtn: { backgroundColor: colors.red600 },
+  smallBtnText: { color: colors.white, fontSize: 13, fontWeight: '700' },
+  smallBtnOutline: {
+    borderRadius: radius.input,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  smallBtnOutlineText: { color: colors.inkSoft, fontSize: 13, fontWeight: '600' },
+  introEditor: { marginTop: 12 },
+  deleteBtn: { padding: 6 },
+
+  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   iconWrap: {
     width: 42,
     height: 42,
@@ -108,7 +766,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  itemBody: { flex: 1 },
-  itemTitle: { fontSize: 15, fontWeight: '700', color: colors.ink, marginBottom: 2 },
-  infoTitle: { fontSize: 14, fontWeight: '700', color: colors.ink, marginBottom: 6 },
 });
