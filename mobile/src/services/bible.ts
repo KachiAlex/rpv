@@ -310,6 +310,44 @@ export async function askBible(
 
 // ---- Devotionals / Plans / Store ----
 
+// ---- Study tools ----
+
+export interface CommentaryEntry {
+  id: string;
+  title?: string;
+  body: string;
+  sources?: string[];
+  tags?: string[];
+}
+
+export async function getCommentary(
+  translationId: string,
+  book: string,
+  chapter: number,
+  verse: number
+): Promise<CommentaryEntry[]> {
+  const params = new URLSearchParams({
+    translationId,
+    book,
+    chapter: String(chapter),
+    verse: String(verse),
+  });
+  const data = await get<{ commentary: CommentaryEntry[] }>(
+    `/api/commentary/?${params.toString()}`
+  );
+  return data.commentary || [];
+}
+
+export interface AssistantAnswer {
+  answer: string;
+  verses?: { book: string; chapter: number; verse: number; text: string }[];
+  suggestions?: string[];
+}
+
+export async function askStudyAssistant(question: string): Promise<AssistantAnswer> {
+  return post<AssistantAnswer>('/api/assistant', { question });
+}
+
 export async function getTodayDevotional(): Promise<Devotional | null> {
   try {
     const data = await get<{ devotional: Devotional | null }>('/api/devotionals');

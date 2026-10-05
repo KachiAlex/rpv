@@ -24,18 +24,23 @@ import TranslationScreen from '../screens/TranslationScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import AdminScreen from '../screens/AdminScreen';
 import AuthScreen from '../screens/AuthScreen';
+import AccountScreen from '../screens/AccountScreen';
+import StudyScreen from '../screens/StudyScreen';
 
 export type DrawerParamList = {
   Dashboard: undefined;
-  Read: { book?: string; chapter?: number } | undefined;
+  Read:
+    | { book?: string; chapter?: number; verse?: number; translationId?: string }
+    | undefined;
   Search: { query?: string; translationId?: string } | undefined;
   BibleSearch: undefined;
-  Study: { hub: string };
+  Study: undefined;
   News: { hub: string };
   Explore: { hub: string };
   Store: undefined;
   Devotionals: undefined;
   Plans: undefined;
+  Account: undefined;
   Bookmarks: undefined;
   Translations: undefined;
   Settings: undefined;
@@ -70,8 +75,8 @@ const EXPLORE_ITEMS: NavItem[] = [
 ];
 
 const ACCOUNT_ITEMS: NavItem[] = [
+  { label: 'My Account', icon: 'account-outline', route: 'Account' },
   { label: 'Reading Plans', icon: 'calendar-check', route: 'Plans' },
-  { label: 'Bookmarks', icon: 'bookmark-outline', route: 'Bookmarks' },
   { label: 'Translations', icon: 'translate', route: 'Translations' },
   { label: 'Settings', icon: 'cog-outline', route: 'Settings' },
 ];
@@ -193,8 +198,7 @@ function MainDrawer(): React.ReactElement {
       />
       <Drawer.Screen
         name="Study"
-        component={HubScreen}
-        initialParams={{ hub: 'Study' }}
+        component={StudyScreen}
         options={{ title: 'Study Tools' }}
       />
       <Drawer.Screen
@@ -216,6 +220,7 @@ function MainDrawer(): React.ReactElement {
         options={{ title: 'Devotionals' }}
       />
       <Drawer.Screen name="Plans" component={PlansScreen} options={{ title: 'Reading Plans' }} />
+      <Drawer.Screen name="Account" component={AccountScreen} options={{ title: 'My Account' }} />
       <Drawer.Screen name="Bookmarks" component={BookmarksScreen} options={{ title: 'Bookmarks' }} />
       <Drawer.Screen
         name="Translations"

@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRoute } from '@react-navigation/native';
@@ -24,6 +26,16 @@ import {
   RpvBook,
 } from '../services/bible';
 import audioBible from '../services/audioBible';
+import {
+  getHighlights,
+  addHighlight,
+  removeHighlightByVerse,
+  updateHighlightColor,
+  addNote,
+  addHistory,
+  saveReadingProgress,
+  VerseHighlight,
+} from '../services/userData';
 import { useAuthStore } from '../store/authStore';
 import { useBookmarkStore } from '../store/bookmarkStore';
 
@@ -43,7 +55,7 @@ function normalizeBookName(name: string): string {
 
 export default function ReadScreen(): React.ReactElement {
   const route = useRoute<any>();
-  const { user } = useAuthStore();
+  const { user, isAuthenticated } = useAuthStore();
   const { bookmarks, addBookmark, loadBookmarks } = useBookmarkStore();
 
   const [translations, setTranslations] = useState<RpvTranslation[]>([]);
@@ -57,6 +69,9 @@ export default function ReadScreen(): React.ReactElement {
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioPaused, setAudioPaused] = useState(false);
   const [speakingVerse, setSpeakingVerse] = useState<number | null>(null);
+  const [highlights, setHighlights] = useState<VerseHighlight[]>([]);
+  const [noteVerse, setNoteVerse] = useState<number | null>(null);
+  const [noteText, setNoteText] = useState('');
   const verseListRef = useRef<FlatList>(null);
 
   const mode: Mode = chapter !== null ? 'verses' : bookName ? 'chapters' : 'books';
@@ -76,6 +91,11 @@ export default function ReadScreen(): React.ReactElement {
         setTranslationId(id);
 
         const params = route.params;
+        // Deep links (account, history, highlights) may carry a translation
+        if (params?.translationId && list.some((t) => t.id === params.translationId)) {
+          setTranslationId(params.translationId);
+          await setSelectedTranslation(params.translationId);
+        }
         const lastRead = await getLastRead();
         const initialBook = params?.book || lastRead?.book || list.find((t) => t.id === id)?.books[0]?.name;
         const initialChapter = params?.chapter ?? lastRead?.chapter ?? null;
@@ -119,8 +139,12 @@ export default function ReadScreen(): React.ReactElement {
   useEffect(() => {
     if (bookName && chapter) {
       setLastRead({ translationId, book: bookName, chapter });
+      if (isAuthenticated) {
+        addHistory({ translationId, book: bookName, chapter, verse: 1 }).catch(() => {});
+        saveReadingProgress({ translationId, book: bookName, chapter }).catch(() => {});
+      }
     }
-  }, [translationId, bookName, chapter]);
+  }, [translationId, bookName, chapter, isAuthenticated]);
 
   const chapterData = useMemo(
     () => book?.chapters.find((c) => c.number === chapter) || null,
@@ -131,6 +155,29 @@ export default function ReadScreen(): React.ReactElement {
     () => new Set(bookmarks.map((b) => `${b.book}-${b.chapter}-${b.verse}`)),
     [bookmarks]
   );
+
+  const highlightByVerse = useMemo(() => {
+    const map = new Map<number, VerseHighlight>();
+    for (const h of highlights) map.set(h.verse, h);
+    return map;
+  }, [highlights]);
+
+  // Load highlights for the open chapter when signed in
+  useEffect(() => {
+    if (!isAuthenticated || !bookName || !chapter) {
+      setHighlights([]);
+      return;
+    }
+    let cancelled = false;
+    getHighlights({ translationId, book: bookName, chapter })
+      .then((h) => {
+        if (!cancelled) setHighlights(h);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, translationId, bookName, chapter]);
 
   // Audio lifecycle
   useEffect(() => {
@@ -247,6 +294,65 @@ export default function ReadScreen(): React.ReactElement {
   const handleAudioStop = useCallback(() => {
     audioBible.stop();
   }, []);
+
+  // Highlight toggle: cycles yellow → green → blue → pink → off
+  const HIGHLIGHT_COLORS = ['yellow', 'green', 'blue', 'pink'];
+  const HIGHLIGHT_BG: Record<string, string> = {
+    yellow: '#fef3c7',
+    green: '#d1fae5',
+    blue: '#dbeafe',
+    pink: '#fce7f3',
+  };
+
+  const handleHighlight = useCallback(
+    async (verseNum: number) => {
+      if (!isAuthenticated || !bookName || !chapter) {
+        Alert.alert('Sign in required', 'Sign in to highlight verses.');
+        return;
+      }
+      const existing = highlightByVerse.get(verseNum);
+      const ref = { translationId, book: bookName, chapter, verse: verseNum };
+      try {
+        if (!existing) {
+          const id = await addHighlight({ ...ref, color: 'yellow' });
+          setHighlights((h) => [...h, { id, ...ref, color: 'yellow' }]);
+        } else {
+          const idx = HIGHLIGHT_COLORS.indexOf(existing.color);
+          if (idx >= 0 && idx < HIGHLIGHT_COLORS.length - 1) {
+            const next = HIGHLIGHT_COLORS[idx + 1];
+            await updateHighlightColor(existing.id, next);
+            setHighlights((h) =>
+              h.map((x) => (x.id === existing.id ? { ...x, color: next } : x))
+            );
+          } else {
+            await removeHighlightByVerse(ref);
+            setHighlights((h) => h.filter((x) => x.id !== existing.id));
+          }
+        }
+      } catch (e) {
+        Alert.alert('Highlight failed', e instanceof Error ? e.message : 'Unknown error');
+      }
+    },
+    [isAuthenticated, translationId, bookName, chapter, highlightByVerse]
+  );
+
+  const handleSaveNote = useCallback(async () => {
+    if (!noteVerse || !bookName || !chapter || !noteText.trim()) return;
+    try {
+      await addNote({
+        translationId,
+        book: bookName,
+        chapter,
+        verse: noteVerse,
+        text: noteText.trim(),
+      });
+      setNoteVerse(null);
+      setNoteText('');
+      Alert.alert('Note saved', `${bookName} ${chapter}:${noteVerse}`);
+    } catch (e) {
+      Alert.alert('Note failed', e instanceof Error ? e.message : 'Unknown error');
+    }
+  }, [noteVerse, noteText, translationId, bookName, chapter]);
 
   // ---------- Render ----------
 
@@ -394,8 +500,15 @@ export default function ReadScreen(): React.ReactElement {
           const key = `${bookName}-${chapter}-${item.number}`;
           const saved = bookmarkedKeys.has(key);
           const speaking = speakingVerse === item.number;
+          const hl = highlightByVerse.get(item.number);
           return (
-            <View style={[styles.verseRow, speaking && styles.verseRowSpeaking]}>
+            <View
+              style={[
+                styles.verseRow,
+                speaking && styles.verseRowSpeaking,
+                hl && { backgroundColor: HIGHLIGHT_BG[hl.color] || HIGHLIGHT_BG.yellow },
+              ]}
+            >
               <Text style={styles.verseNum}>{item.number}</Text>
               <View style={styles.verseBody}>
                 <Text
@@ -415,6 +528,26 @@ export default function ReadScreen(): React.ReactElement {
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => handleCopyVerse(item)} style={styles.verseAction}>
                     <MaterialCommunityIcons name="content-copy" size={15} color={colors.inkFaint} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleHighlight(item.number)} style={styles.verseAction}>
+                    <MaterialCommunityIcons
+                      name={hl ? 'marker' : 'format-color-highlight'}
+                      size={16}
+                      color={hl ? colors.red600 : colors.inkFaint}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (!isAuthenticated) {
+                        Alert.alert('Sign in required', 'Sign in to add notes.');
+                        return;
+                      }
+                      setNoteVerse(item.number);
+                      setNoteText('');
+                    }}
+                    style={styles.verseAction}
+                  >
+                    <MaterialCommunityIcons name="note-text-outline" size={16} color={colors.inkFaint} />
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() =>
@@ -437,6 +570,32 @@ export default function ReadScreen(): React.ReactElement {
           <Empty icon="book-open-outline" message="No verses in this chapter yet." />
         }
       />
+
+      <Modal visible={noteVerse !== null} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              Note — {bookName} {chapter}:{noteVerse}
+            </Text>
+            <TextInput
+              style={styles.noteInput}
+              value={noteText}
+              onChangeText={setNoteText}
+              placeholder="Write your note…"
+              multiline
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity onPress={() => setNoteVerse(null)} style={styles.modalBtn}>
+                <Text style={styles.modalBtnCancel}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSaveNote} style={[styles.modalBtn, styles.modalBtnSave]}>
+                <Text style={styles.modalBtnSaveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 
@@ -651,4 +810,33 @@ const styles = StyleSheet.create({
   audioBtnStop: {
     backgroundColor: colors.navy800,
   },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(11,16,48,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalCard: {
+    backgroundColor: colors.white,
+    borderRadius: radius.card,
+    padding: spacing.md,
+    width: '100%',
+  },
+  modalTitle: { fontSize: 15, fontWeight: '700', color: colors.ink, marginBottom: 10 },
+  noteInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.input,
+    padding: 10,
+    minHeight: 90,
+    textAlignVertical: 'top',
+    fontSize: 14,
+    color: colors.ink,
+  },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 12 },
+  modalBtn: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: radius.input },
+  modalBtnCancel: { color: colors.inkSoft, fontWeight: '600' },
+  modalBtnSave: { backgroundColor: colors.red600 },
+  modalBtnSaveText: { color: colors.white, fontWeight: '700' },
 });
