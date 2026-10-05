@@ -4,17 +4,49 @@ import { useBibleStore } from '../store';
 import { getApiUrl } from '../api-config';
 
 const channelKey = (channelId: string) => `rpv:projector:${channelId}`;
+const broadcastName = (channelId: string) => `rpv-projector-${channelId}`;
 
 // Cross-device projector channel sync via /api/projector (R2-backed).
-// localStorage remains as a same-device instant-update path and offline
-// fallback, so existing projector/remote pages keep working unchanged.
+// Three transport layers, fastest first:
+//   1. BroadcastChannel — instant updates between windows on the same machine
+//      (e.g. a desktop control window + a projector window on a second display)
+//   2. localStorage 'storage' events — instant cross-tab/window fallback
+//   3. /api/projector polling — cross-device sync (phone remote → screen)
 export class ProjectionService {
   private cacheManager: CacheManager;
   private pollTimers = new Map<string, ReturnType<typeof setInterval>>();
+  private channels = new Map<string, BroadcastChannel>();
   private lastSeen = new Map<string, string>();
 
   constructor() {
     this.cacheManager = new CacheManager();
+  }
+
+  private broadcast(channelId: string, ref: ProjectorRef): void {
+    if (typeof BroadcastChannel === 'undefined') return;
+    try {
+      let bc = this.channels.get(channelId);
+      if (!bc) {
+        bc = new BroadcastChannel(broadcastName(channelId));
+        this.channels.set(channelId, bc);
+      }
+      bc.postMessage(ref);
+    } catch {
+      /* BroadcastChannel unavailable */
+    }
+  }
+
+  private publishLocal(channelId: string, ref: ProjectorRef): void {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(channelKey(channelId), JSON.stringify(ref));
+      // StorageEvent doesn't fire in the document that wrote it — dispatch
+      // manually so a same-window projector view updates instantly too.
+      window.dispatchEvent(new StorageEvent('storage', { key: channelKey(channelId) }));
+    } catch {
+      /* storage unavailable */
+    }
+    this.broadcast(channelId, ref);
   }
 
   private async postChannel(channelId: string, ref: ProjectorRef): Promise<boolean> {
@@ -48,12 +80,10 @@ export class ProjectionService {
         timestamp: new Date(),
       };
 
-      const posted = await this.postChannel(channelId, projectorRef);
-      if (!posted && typeof window !== 'undefined') {
-        // Offline/same-device fallback
-        localStorage.setItem(channelKey(channelId), JSON.stringify(projectorRef));
-        window.dispatchEvent(new StorageEvent('storage', { key: channelKey(channelId) }));
-      }
+      // Local transports first — instant for same-machine projector windows.
+      // The API POST then makes it visible to remotes on other devices.
+      this.publishLocal(channelId, projectorRef);
+      await this.postChannel(channelId, projectorRef);
       await this.cacheManager.saveProjectionChannel(channelId, projectorRef);
     } catch (error) {
       console.error('Error sending to projector:', error);
@@ -87,6 +117,19 @@ export class ProjectionService {
     };
     window.addEventListener('storage', handler);
 
+    // Instant same-machine updates (separate Electron windows share this too)
+    let listener: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        listener = new BroadcastChannel(broadcastName(channelId));
+        listener.onmessage = (e) => {
+          if (e.data) apply(e.data as ProjectorRef);
+        };
+      } catch {
+        listener = null;
+      }
+    }
+
     // Cross-device updates: poll the API every 2s
     const poll = async () => {
       try {
@@ -107,6 +150,7 @@ export class ProjectionService {
 
     return () => {
       window.removeEventListener('storage', handler);
+      listener?.close();
       clearInterval(timer);
       this.pollTimers.delete(channelId);
     };

@@ -547,30 +547,12 @@ export const useBibleStore = create<BibleState>((set, get) => {
       if (!current) return;
 
       try {
+        // The service publishes locally (BroadcastChannel + localStorage)
+        // before posting to the API, so same-machine projector windows
+        // update instantly and cross-device remotes follow via polling.
         await projectionService.sendToProjector(channelId || 'default', ref);
       } catch (error) {
         console.error('Error sending to projector:', error);
-        // Fallback to localStorage for demo-only environments
-        try {
-          const payload = {
-            translation: current.name,
-            book: ref.book,
-            chapter: ref.chapter,
-            verse: ref.verse,
-            text:
-              current.books
-                .find((book) => book.name === ref.book)
-                ?.chapters.find((chapter) => chapter.number === ref.chapter)
-                ?.verses.find((verse) => verse.number === ref.verse)?.text ?? '',
-            timestamp: new Date().toISOString(),
-          };
-
-          const storageKey = `rpv:projector:${channelId || 'default'}`;
-          localStorage.setItem(storageKey, JSON.stringify(payload));
-          window.dispatchEvent(new StorageEvent('storage', { key: storageKey }));
-        } catch {
-          // Ignore fallback failures
-        }
       }
     },
 
@@ -584,7 +566,7 @@ export const useBibleStore = create<BibleState>((set, get) => {
         unsubscribers.channel();
       }
 
-      // Load initial channel data first
+      // Load initial channel data first (API → local cache fallback)
       try {
         const initialRef = await _projectionService.getChannel(channel);
         if (initialRef) {
@@ -594,32 +576,20 @@ export const useBibleStore = create<BibleState>((set, get) => {
         console.warn('Error loading initial channel data:', error);
       }
 
-      // Use localStorage for projector channel sync
       if (typeof window === 'undefined') return;
-      
-      const read = () => {
-        try {
-          const raw = localStorage.getItem(`rpv:projector:${channel}`);
-          if (raw) {
-            set({ projectorRef: JSON.parse(raw) });
-          } else {
-            // Clear if no data
-            set({ projectorRef: { translation: '', book: '', chapter: 0, verse: 0, text: '' } });
-          }
-        } catch {}
-      };
-      
-      read();
-      const handler = (e: StorageEvent) => {
-        if (e.key === `rpv:projector:${channel}`) {
-          read();
+
+      // Delegate to the service — BroadcastChannel + storage events for
+      // instant same-machine updates, plus 2s API polling for cross-device.
+      unsubscribers.channel = _projectionService.subscribeToChannel(
+        channel,
+        (ref) => {
+          set({
+            projectorRef: ref ?? {
+              translation: '', book: '', chapter: 0, verse: 0, text: '',
+            },
+          });
         }
-      };
-      window.addEventListener('storage', handler);
-      
-      unsubscribers.channel = () => {
-        window.removeEventListener('storage', handler);
-      };
+      );
     },
 
     importJson: async (data) => {

@@ -91,15 +91,21 @@
     "productName": "RPV Bible",
     "files": [
       "electron/**/*",
-      ".next/**/*",
-      "public/**/*",
+      "desktop-resources/icon.png",
       "package.json"
     ],
     "directories": {
-      "buildResources": "build"
+      "buildResources": "desktop-resources",
+      "output": "dist-desktop"
     },
     "win": {
       "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
         {
           "target": "portable",
           "arch": [
@@ -117,9 +123,16 @@
       ]
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RPV Bible"
     }
+  },
+  "description": "Redemption Project Version Bible \u2014 study and projection",
+  "author": {
+    "name": "Redemption Project Version"
   }
 }
