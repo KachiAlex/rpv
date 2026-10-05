@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import RootNavigator from './navigation/RootNavigator';
+import { SplashScreen } from './components/SplashScreen';
 import { initializeDatabase } from './services/database';
 import { initializeApi } from './services/api';
 import { useAuthStore } from './store/authStore';
@@ -39,9 +40,11 @@ export default function App(): React.ReactElement {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer theme={navTheme}>
-        <RootNavigator />
-      </NavigationContainer>
+      <SplashScreen>
+        <NavigationContainer theme={navTheme}>
+          <RootNavigator />
+        </NavigationContainer>
+      </SplashScreen>
       <StatusBar style="light" />
     </SafeAreaProvider>
   );
