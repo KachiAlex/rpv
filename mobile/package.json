@@ -27,6 +27,7 @@
     "date-fns": "^2.30.0",
     "expo": "^50.0.0",
     "expo-clipboard": "~5.0.1",
+    "expo-document-picker": "~11.10.1",
     "expo-modules-core": "^1.11.14",
     "expo-speech": "~11.7.0",
     "expo-sqlite": "^13.0.0",

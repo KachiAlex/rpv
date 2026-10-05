@@ -11,6 +11,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import { colors, radius, spacing } from '../theme';
 import { RpvCard, Loading, Empty, FieldLabel, textStyles } from '../components/Rpv';
 import { useAuthStore } from '../store/authStore';
@@ -29,6 +30,7 @@ import {
   setBlogPostStatus,
   deleteBlogPost,
   AdminBlogPost,
+  uploadTranslationDocument,
 } from '../services/adminApi';
 
 type AdminTab = 'edit' | 'publications' | 'highlights' | 'blog' | 'banner';
@@ -43,7 +45,117 @@ const TABS: { id: AdminTab; label: string; description: string }[] = [
 
 // ---------- Upload & Edit tab ----------
 
-function EditTab({ translations }: { translations: RpvTranslation[] }): React.ReactElement {
+const UPLOAD_MIME: Record<string, string> = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  txt: 'text/plain',
+  json: 'application/json',
+};
+
+function UploadCard({ onDone }: { onDone: () => void }): React.ReactElement {
+  const [translationId, setTranslationId] = useState('RPV');
+  const [translationName, setTranslationName] = useState('Redemption Project Version');
+  const [bookName, setBookName] = useState('');
+  const [file, setFile] = useState<{ uri: string; name: string; size?: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const pick = async () => {
+    const res = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'application/json'],
+      copyToCacheDirectory: true,
+    });
+    if (!res.canceled && res.assets?.[0]) {
+      setFile({ uri: res.assets[0].uri, name: res.assets[0].name, size: res.assets[0].size });
+      if (!bookName) setBookName(res.assets[0].name.replace(/\.(pdf|docx|txt|json)$/i, ''));
+    }
+  };
+
+  const upload = async () => {
+    if (!file || !translationId.trim() || !bookName.trim()) {
+      Alert.alert('Missing fields', 'Choose a file and enter a translation ID and book name.');
+      return;
+    }
+    const ext = file.name.toLowerCase().split('.').pop() || '';
+    const mimeType = UPLOAD_MIME[ext] || 'application/octet-stream';
+    setBusy(true);
+    try {
+      const result = await uploadTranslationDocument({
+        uri: file.uri,
+        fileName: file.name,
+        mimeType,
+        translationId: translationId.trim(),
+        translationName: translationName.trim() || translationId.trim(),
+        bookName: bookName.trim(),
+      });
+      Alert.alert(
+        'Upload complete',
+        `Imported ${result.booksImported.join(', ')} into ${result.translationId} — ${result.chaptersCount} chapter(s), ${result.versesCount} verse(s).\n\nThe translation is live for all readers.`,
+      );
+      setFile(null);
+      setBookName('');
+      onDone();
+    } catch (e) {
+      Alert.alert('Upload failed', e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <RpvCard>
+      <Text style={styles.sectionTitle}>Upload Document Translation</Text>
+      <Text style={textStyles.body}>
+        Upload a PDF, DOCX, TXT or JSON file containing one book of Bible text. Chapters and
+        verses are detected automatically and merged into the translation — everyone sees it
+        immediately.
+      </Text>
+
+      <FieldLabel>Translation ID</FieldLabel>
+      <TextInput style={styles.input} value={translationId} onChangeText={setTranslationId} placeholder="e.g. RPV or pidgin-bible" />
+
+      <FieldLabel>Translation Name</FieldLabel>
+      <TextInput style={styles.input} value={translationName} onChangeText={setTranslationName} placeholder="e.g. Redemption Project Version" />
+
+      <FieldLabel>Book Name</FieldLabel>
+      <TextInput style={styles.input} value={bookName} onChangeText={setBookName} placeholder="e.g. John" />
+
+      <FieldLabel>Document</FieldLabel>
+      {file ? (
+        <View style={styles.fileRow}>
+          <MaterialCommunityIcons name="file-check-outline" size={20} color="#1a7f37" />
+          <View style={styles.itemBody}>
+            <Text style={styles.itemTitle} numberOfLines={1}>{file.name}</Text>
+            {file.size != null && (
+              <Text style={styles.bookMeta}>{(file.size / 1024 / 1024).toFixed(2)} MB</Text>
+            )}
+          </View>
+          <TouchableOpacity onPress={() => setFile(null)} disabled={busy}>
+            <MaterialCommunityIcons name="close-circle-outline" size={20} color={colors.red600} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity style={styles.dropzone} onPress={pick} disabled={busy}>
+          <MaterialCommunityIcons name="file-upload-outline" size={22} color={colors.inkSoft} />
+          <Text style={styles.dropzoneText}>Choose PDF, DOCX, TXT or JSON</Text>
+        </TouchableOpacity>
+      )}
+
+      <TouchableOpacity
+        style={[styles.primaryBtn, (!file || !bookName.trim() || busy) && styles.btnDisabled]}
+        onPress={upload}
+        disabled={!file || !bookName.trim() || busy}
+      >
+        <Text style={styles.primaryBtnText}>{busy ? 'Uploading & Parsing…' : 'Upload & Parse Document'}</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.uploadHint}>
+        Tips: mark chapters clearly (e.g. "Chapter 1"), start each verse with its number, and use one book per file.
+      </Text>
+    </RpvCard>
+  );
+}
+
+function EditTab({ translations, onRefresh }: { translations: RpvTranslation[]; onRefresh: () => void }): React.ReactElement {
   const [translationId, setTranslationId] = useState(translations[0]?.id || 'RPV');
   const [book, setBook] = useState('Romans');
   const [chapter, setChapter] = useState('1');
@@ -81,6 +193,7 @@ function EditTab({ translations }: { translations: RpvTranslation[] }): React.Re
 
   return (
     <View style={styles.tabBody}>
+      <UploadCard onDone={onRefresh} />
       <RpvCard>
         <Text style={styles.sectionTitle}>Quick Edit Verse</Text>
         <Text style={textStyles.body}>
@@ -834,7 +947,9 @@ export default function AdminScreen(): React.ReactElement {
           />
         }
       >
-        {activeTab === 'edit' && <EditTab translations={translations} />}
+        {activeTab === 'edit' && (
+          <EditTab translations={translations} onRefresh={() => loadManifest(true)} />
+        )}
         {activeTab === 'publications' && (
           <PublicationsTab
             translations={translations}
@@ -978,6 +1093,31 @@ const styles = StyleSheet.create({
   smallBtnOutlineText: { color: colors.inkSoft, fontSize: 13, fontWeight: '600' },
   introEditor: { marginTop: 12 },
   deleteBtn: { padding: 6 },
+
+  dropzone: {
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    borderRadius: radius.card,
+    paddingVertical: 26,
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: spacing.sm,
+  },
+  dropzoneText: { fontSize: 13, fontWeight: '600', color: colors.inkSoft },
+  fileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    backgroundColor: '#f0fdf4',
+    borderRadius: radius.input,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: spacing.sm,
+  },
+  uploadHint: { fontSize: 11, color: colors.inkFaint, marginTop: 8, lineHeight: 16 },
 
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   iconWrap: {
