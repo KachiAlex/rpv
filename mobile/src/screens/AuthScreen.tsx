@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -14,16 +14,25 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '../theme';
 import { RedButton, Pill, textStyles } from '../components/Rpv';
+import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
 
 export default function AuthScreen(): React.ReactElement {
+  const navigation = useNavigation<any>();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const { signUp, signIn, loading, error } = useAuthStore();
+  const { signUp, signIn, loading, error, isAuthenticated } = useAuthStore();
+
+  // Mirror the web login flow — land on the dashboard after auth
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigation.navigate('Dashboard');
+    }
+  }, [isAuthenticated, navigation]);
 
   const handleAuth = async (): Promise<void> => {
     if (!email.trim() || !password.trim()) {

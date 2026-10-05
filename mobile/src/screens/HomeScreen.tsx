@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
+  TouchableOpacity,
   Alert,
   RefreshControl,
 } from 'react-native';
@@ -184,17 +185,7 @@ export default function HomeScreen(): React.ReactElement {
           />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.transRow}>
             {translations.map((t) => (
-              <Pill
-                key={t.id}
-                variant={t.id === selectedTranslation ? 'red' : 'navy'}
-              >
-                {t.id === selectedTranslation ? `✓ ${t.id}` : t.id}
-              </Pill>
-            ))}
-          </ScrollView>
-          <View style={styles.transTapHint}>
-            {translations.map((t) => (
-              <Text
+              <TouchableOpacity
                 key={t.id}
                 onPress={() => handleSelectTranslation(t.id)}
                 style={[
@@ -202,10 +193,17 @@ export default function HomeScreen(): React.ReactElement {
                   t.id === selectedTranslation && styles.transOptionActive,
                 ]}
               >
-                {t.name}
-              </Text>
+                <Text
+                  style={[
+                    styles.transOptionText,
+                    t.id === selectedTranslation && styles.transOptionTextActive,
+                  ]}
+                >
+                  {t.id === selectedTranslation ? `✓ ${t.name}` : t.name}
+                </Text>
+              </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
           <RedButton title="Search" icon="magnify" onPress={handleSearch} />
           <Text style={styles.proTip}>
             <Text style={styles.proTipBold}>Pro tip:</Text> Bookmark a verse while reading to keep it
@@ -356,26 +354,28 @@ const styles = StyleSheet.create({
   },
   transRow: {
     flexDirection: 'row',
-    marginBottom: 4,
-  },
-  transTapHint: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
     marginBottom: spacing.sm,
   },
   transOption: {
-    fontSize: 12,
-    color: colors.inkSoft,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.border,
+    marginRight: 8,
+    backgroundColor: colors.white,
   },
   transOptionActive: {
-    color: colors.red600,
     borderColor: colors.red600,
+    backgroundColor: colors.red50,
+  },
+  transOptionText: {
+    fontSize: 12,
+    color: colors.inkSoft,
+    fontWeight: '600',
+  },
+  transOptionTextActive: {
+    color: colors.red600,
     fontWeight: '700',
   },
   proTip: {

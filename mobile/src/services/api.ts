@@ -186,10 +186,13 @@ export async function getPreferences(_userId: string): Promise<any> {
 // ---- Role ----
 
 export async function getUserRole(): Promise<'user' | 'admin'> {
+  // The role embedded in the JWT/session is authoritative — the
+  // user_profiles row used by ?action=role may not exist yet.
+  if (currentUser?.role === 'admin') return 'admin';
   try {
     const data = await apiFetch('/api/user/?action=role');
     return data.role === 'admin' ? 'admin' : 'user';
   } catch {
-    return currentUser?.role === 'admin' ? 'admin' : 'user';
+    return 'user';
   }
 }

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRoute } from '@react-navigation/native';
+import * as Clipboard from 'expo-clipboard';
 import { colors, radius, spacing } from '../theme';
 import { RpvCard, Eyebrow, Loading, Empty, textStyles } from '../components/Rpv';
 import {
@@ -22,10 +23,23 @@ import {
   RpvTranslation,
   RpvBook,
 } from '../services/bible';
+import audioBible from '../services/audioBible';
 import { useAuthStore } from '../store/authStore';
 import { useBookmarkStore } from '../store/bookmarkStore';
 
 type Mode = 'books' | 'chapters' | 'verses';
+
+// Book names differ across translations ("1st Corinthians" vs
+// "1 Corinthians", "James (Jacob)" vs "James"). Normalize so the same
+// book can be matched when switching translations.
+function normalizeBookName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\b(\d+)(st|nd|rd|th)\b/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 export default function ReadScreen(): React.ReactElement {
   const route = useRoute<any>();
@@ -40,6 +54,10 @@ export default function ReadScreen(): React.ReactElement {
   const [fontSize, setFontSize] = useState(17);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioPaused, setAudioPaused] = useState(false);
+  const [speakingVerse, setSpeakingVerse] = useState<number | null>(null);
+  const verseListRef = useRef<FlatList>(null);
 
   const mode: Mode = chapter !== null ? 'verses' : bookName ? 'chapters' : 'books';
 
@@ -114,13 +132,58 @@ export default function ReadScreen(): React.ReactElement {
     [bookmarks]
   );
 
-  const changeTranslation = useCallback(async (id: string) => {
-    setTranslationId(id);
-    await setSelectedTranslation(id);
-    setBook(null);
-    setBookName(null);
-    setChapter(null);
-  }, []);
+  // Audio lifecycle
+  useEffect(() => {
+    audioBible.setCallbacks(
+      (n) => {
+        setSpeakingVerse(n);
+        const idx = (chapterData?.verses || []).findIndex((v) => v.number === n);
+        if (idx >= 0) {
+          verseListRef.current?.scrollToIndex({ index: idx, viewPosition: 0.3, animated: true });
+        }
+      },
+      (playing, paused) => {
+        setAudioPlaying(playing);
+        setAudioPaused(paused);
+        if (!playing) setSpeakingVerse(null);
+      }
+    );
+    return () => audioBible.stop();
+  }, [chapterData]);
+
+  useEffect(() => {
+    // Stop playback when leaving verses mode or changing chapter
+    return () => audioBible.stop();
+  }, [translationId, bookName, chapter]);
+
+  const changeTranslation = useCallback(
+    async (id: string) => {
+      setTranslationId(id);
+      await setSelectedTranslation(id);
+      audioBible.stop();
+
+      const next = translations.find((t) => t.id === id);
+      if (!bookName || !next) {
+        setBook(null);
+        setBookName(null);
+        setChapter(null);
+        return;
+      }
+
+      // Keep the same book/chapter in the new translation when possible
+      const wanted = normalizeBookName(bookName);
+      const match = next.books.find((b) => normalizeBookName(b.name) === wanted);
+      if (match) {
+        setBookName(match.name); // triggers book reload via effect
+        if (chapter && chapter > match.chapterCount) setChapter(null);
+      } else {
+        setBook(null);
+        setBookName(null);
+        setChapter(null);
+      }
+    },
+    [translations, bookName, chapter]
+  );
 
   const selectBook = useCallback((name: string) => {
     setBookName(name);
@@ -158,6 +221,32 @@ export default function ReadScreen(): React.ReactElement {
   const nextChapter = useCallback(() => {
     if (book && chapter && chapter < book.chapters.length) setChapter(chapter + 1);
   }, [book, chapter]);
+
+  const handleCopyVerse = useCallback(
+    async (verse: { number: number; text: string }) => {
+      await Clipboard.setStringAsync(
+        `${bookName} ${chapter}:${verse.number} (${translationId})\n\n${verse.text}`
+      );
+      Alert.alert('Copied', `${bookName} ${chapter}:${verse.number} copied to clipboard`);
+    },
+    [bookName, chapter, translationId]
+  );
+
+  const handleAudioToggle = useCallback(() => {
+    const verses = chapterData?.verses || [];
+    if (!verses.length) return;
+    if (audioPlaying && audioPaused) {
+      audioBible.resume();
+    } else if (audioPlaying) {
+      audioBible.pause();
+    } else {
+      audioBible.play(verses, 0);
+    }
+  }, [audioPlaying, audioPaused, chapterData]);
+
+  const handleAudioStop = useCallback(() => {
+    audioBible.stop();
+  }, []);
 
   // ---------- Render ----------
 
@@ -277,27 +366,69 @@ export default function ReadScreen(): React.ReactElement {
         </View>
       </View>
 
+      {/* Audio bible controls */}
+      <View style={styles.audioBar}>
+        <MaterialCommunityIcons name="volume-high" size={18} color={colors.red600} />
+        <Text style={styles.audioLabel}>Audio Bible</Text>
+        <View style={styles.audioBtns}>
+          <TouchableOpacity onPress={handleAudioToggle} style={styles.audioBtn}>
+            <MaterialCommunityIcons
+              name={audioPlaying && !audioPaused ? 'pause' : 'play'}
+              size={20}
+              color={colors.white}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleAudioStop} style={[styles.audioBtn, styles.audioBtnStop]}>
+            <MaterialCommunityIcons name="stop" size={20} color={colors.white} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       <FlatList
+        ref={verseListRef}
         data={chapterData?.verses || []}
         keyExtractor={(v) => `${v.number}`}
         contentContainerStyle={styles.verseList}
+        onScrollToIndexFailed={() => {}}
         renderItem={({ item }) => {
           const key = `${bookName}-${chapter}-${item.number}`;
           const saved = bookmarkedKeys.has(key);
+          const speaking = speakingVerse === item.number;
           return (
-            <View style={styles.verseRow}>
+            <View style={[styles.verseRow, speaking && styles.verseRowSpeaking]}>
               <Text style={styles.verseNum}>{item.number}</Text>
               <View style={styles.verseBody}>
-                <Text style={[styles.verseText, { fontSize, lineHeight: fontSize * 1.55 }]}>
+                <Text
+                  selectable
+                  selectionColor={colors.lav}
+                  style={[styles.verseText, { fontSize, lineHeight: fontSize * 1.55 }]}
+                >
                   {item.text}
                 </Text>
-                <TouchableOpacity onPress={() => handleBookmark(item)} style={styles.verseAction}>
-                  <MaterialCommunityIcons
-                    name={saved ? 'bookmark' : 'bookmark-outline'}
-                    size={16}
-                    color={saved ? colors.red600 : colors.inkFaint}
-                  />
-                </TouchableOpacity>
+                <View style={styles.verseActions}>
+                  <TouchableOpacity onPress={() => handleBookmark(item)} style={styles.verseAction}>
+                    <MaterialCommunityIcons
+                      name={saved ? 'bookmark' : 'bookmark-outline'}
+                      size={16}
+                      color={saved ? colors.red600 : colors.inkFaint}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleCopyVerse(item)} style={styles.verseAction}>
+                    <MaterialCommunityIcons name="content-copy" size={15} color={colors.inkFaint} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() =>
+                      audioBible.play(chapterData?.verses || [], chapterData?.verses.findIndex((v) => v.number === item.number) || 0)
+                    }
+                    style={styles.verseAction}
+                  >
+                    <MaterialCommunityIcons
+                      name={speaking ? 'volume-high' : 'play-circle-outline'}
+                      size={17}
+                      color={speaking ? colors.red600 : colors.inkFaint}
+                    />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           );
@@ -474,9 +605,50 @@ const styles = StyleSheet.create({
   verseText: {
     color: colors.ink,
   },
+  verseRowSpeaking: {
+    backgroundColor: colors.red50,
+    borderRadius: radius.input,
+    padding: 8,
+    marginHorizontal: -8,
+  },
+  verseActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginTop: 6,
+  },
   verseAction: {
-    marginTop: 4,
-    alignSelf: 'flex-start',
     padding: 4,
+  },
+  audioBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+  },
+  audioLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.navy800,
+  },
+  audioBtns: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  audioBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.red600,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  audioBtnStop: {
+    backgroundColor: colors.navy800,
   },
 });
