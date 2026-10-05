@@ -221,6 +221,28 @@ export async function saveReadingProgress(progress: {
   });
 }
 
+// ---- Store purchases ----
+
+export async function getPurchases(): Promise<string[]> {
+  const data = await authed<{ purchases: { bookId: string }[] }>('/api/books/purchase/');
+  return (data.purchases || []).map((p) => String(p.bookId));
+}
+
+export async function purchaseBook(bookId: string): Promise<{ alreadyPurchased?: boolean }> {
+  return authed('/api/books/purchase/', {
+    method: 'POST',
+    body: JSON.stringify({ bookId }),
+  });
+}
+
+export async function getBookSignedUrl(bookId: string): Promise<string> {
+  const data = await authed<{ signedUrl: string }>('/api/books/signed-url/', {
+    method: 'POST',
+    body: JSON.stringify({ bookId }),
+  });
+  return data.signedUrl;
+}
+
 // ---- Password ----
 
 export async function changePassword(

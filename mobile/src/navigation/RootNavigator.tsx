@@ -26,6 +26,7 @@ import AdminScreen from '../screens/AdminScreen';
 import AuthScreen from '../screens/AuthScreen';
 import AccountScreen from '../screens/AccountScreen';
 import StudyScreen from '../screens/StudyScreen';
+import ProjectorScreen from '../screens/ProjectorScreen';
 
 export type DrawerParamList = {
   Dashboard: undefined;
@@ -40,6 +41,7 @@ export type DrawerParamList = {
   Store: undefined;
   Devotionals: undefined;
   Plans: undefined;
+  Projector: undefined;
   Account: undefined;
   Bookmarks: undefined;
   Translations: undefined;
@@ -72,6 +74,7 @@ const EXPLORE_ITEMS: NavItem[] = [
   { label: 'Explore More', icon: 'compass-outline', route: 'Explore' },
   { label: 'Daily Devotional', icon: 'calendar', route: 'Devotionals' },
   { label: 'Store', icon: 'storefront-outline', route: 'Store' },
+  { label: 'Projector', icon: 'projector', route: 'Projector' },
 ];
 
 const ACCOUNT_ITEMS: NavItem[] = [
@@ -220,6 +223,11 @@ function MainDrawer(): React.ReactElement {
         options={{ title: 'Devotionals' }}
       />
       <Drawer.Screen name="Plans" component={PlansScreen} options={{ title: 'Reading Plans' }} />
+      <Drawer.Screen
+        name="Projector"
+        component={ProjectorScreen}
+        options={{ title: 'Projector Remote' }}
+      />
       <Drawer.Screen name="Account" component={AccountScreen} options={{ title: 'My Account' }} />
       <Drawer.Screen name="Bookmarks" component={BookmarksScreen} options={{ title: 'Bookmarks' }} />
       <Drawer.Screen
