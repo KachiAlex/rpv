@@ -141,3 +141,60 @@ export async function deleteHighlight(id: string): Promise<void> {
     body: JSON.stringify({ action: 'delete', id }),
   });
 }
+
+// ---- Blog management ----
+
+export interface AdminBlogPost {
+  id: string;
+  title: string;
+  excerpt: string;
+  slug: string;
+  authorName: string;
+  status: 'draft' | 'published' | 'archived';
+  publishedAt?: string | null;
+  createdAt: string;
+  tags: string[];
+}
+
+export async function getBlogPosts(): Promise<AdminBlogPost[]> {
+  const data = await authed<{ posts: any[] }>('/api/blog?status=all&limit=100');
+  return (data.posts || []).map((p) => ({ ...p, tags: p.tags || [] }));
+}
+
+export async function createBlogPost(post: {
+  title: string;
+  content: string;
+  excerpt: string;
+  authorName: string;
+  status: 'draft' | 'published';
+  tags: string[];
+}): Promise<void> {
+  const slug = post.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  await authed('/api/blog', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'create',
+      post: { ...post, slug, author: post.authorName, videoEmbeds: [] },
+    }),
+  });
+}
+
+export async function setBlogPostStatus(
+  id: string,
+  status: 'draft' | 'published' | 'archived'
+): Promise<void> {
+  await authed('/api/blog', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'setStatus', id, status }),
+  });
+}
+
+export async function deleteBlogPost(id: string): Promise<void> {
+  await authed('/api/blog', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'delete', id }),
+  });
+}

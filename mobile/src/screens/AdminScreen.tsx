@@ -24,6 +24,11 @@ import {
   addHighlight,
   deleteHighlight,
   AdminHighlight,
+  getBlogPosts,
+  createBlogPost,
+  setBlogPostStatus,
+  deleteBlogPost,
+  AdminBlogPost,
 } from '../services/adminApi';
 
 type AdminTab = 'edit' | 'publications' | 'highlights' | 'blog' | 'banner';
@@ -487,6 +492,229 @@ function HighlightsTab({ translations }: { translations: RpvTranslation[] }): Re
   );
 }
 
+// ---------- Blog tab ----------
+
+const BLOG_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
+  published: { bg: '#e8f5e9', fg: '#1a7f37' },
+  draft: { bg: colors.red50, fg: colors.red700 },
+  archived: { bg: '#ececf1', fg: colors.inkSoft },
+};
+
+function BlogTab(): React.ReactElement {
+  const { user } = useAuthStore();
+  const [posts, setPosts] = useState<AdminBlogPost[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [title, setTitle] = useState('');
+  const [excerpt, setExcerpt] = useState('');
+  const [content, setContent] = useState('');
+  const [tags, setTags] = useState('');
+  const [publishNow, setPublishNow] = useState(false);
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    try {
+      setPosts(await getBlogPosts());
+    } catch (e) {
+      Alert.alert('Load failed', e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const submit = async () => {
+    if (!title.trim() || !content.trim()) {
+      Alert.alert('Missing fields', 'Enter a title and content.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await createBlogPost({
+        title: title.trim(),
+        content: content.trim(),
+        excerpt: excerpt.trim(),
+        authorName: user?.displayName || user?.email || 'Admin',
+        status: publishNow ? 'published' : 'draft',
+        tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+      });
+      Alert.alert('Created', publishNow ? 'Post published.' : 'Draft saved.');
+      setTitle(''); setExcerpt(''); setContent(''); setTags(''); setPublishNow(false); setShowForm(false);
+      await load();
+    } catch (e) {
+      Alert.alert('Create failed', e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const changeStatus = async (id: string, status: 'draft' | 'published' | 'archived') => {
+    setBusy(true);
+    try {
+      await setBlogPostStatus(id, status);
+      await load();
+    } catch (e) {
+      Alert.alert('Update failed', e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = (id: string, postTitle: string) => {
+    Alert.alert('Delete post', `Delete "${postTitle}"? This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setBusy(true);
+          try {
+            await deleteBlogPost(id);
+            await load();
+          } catch (e) {
+            Alert.alert('Delete failed', e instanceof Error ? e.message : 'Unknown error');
+          } finally {
+            setBusy(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  const published = posts.filter((p) => p.status === 'published').length;
+  const drafts = posts.filter((p) => p.status === 'draft').length;
+
+  return (
+    <View style={styles.tabBody}>
+      <View style={styles.statsRow}>
+        <View style={styles.statBox}>
+          <Text style={styles.statNum}>{posts.length}</Text>
+          <Text style={styles.statLabel}>Total</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statNum}>{published}</Text>
+          <Text style={styles.statLabel}>Published</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statNum}>{drafts}</Text>
+          <Text style={styles.statLabel}>Drafts</Text>
+        </View>
+      </View>
+
+      <RpvCard>
+        <View style={styles.bookRow}>
+          <View style={styles.itemBody}>
+            <Text style={styles.sectionTitle}>New Post</Text>
+            <Text style={textStyles.body}>Create an article for the blog and news pages.</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.smallBtn, publishNow ? styles.unpublishBtn : styles.publishBtn]}
+            onPress={() => setShowForm((v) => !v)}
+          >
+            <Text style={styles.smallBtnText}>{showForm ? 'Close' : 'Write'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {showForm && (
+          <View style={styles.introEditor}>
+            <FieldLabel>Title</FieldLabel>
+            <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Post title" />
+            <FieldLabel>Excerpt</FieldLabel>
+            <TextInput style={styles.input} value={excerpt} onChangeText={setExcerpt} placeholder="Short summary (optional)" />
+            <FieldLabel>Content</FieldLabel>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={content}
+              onChangeText={setContent}
+              placeholder="Write the article…"
+              multiline
+            />
+            <FieldLabel>Tags (comma separated)</FieldLabel>
+            <TextInput style={styles.input} value={tags} onChangeText={setTags} placeholder="news, update" />
+            <TouchableOpacity style={styles.bookRow} onPress={() => setPublishNow((v) => !v)}>
+              <MaterialCommunityIcons
+                name={publishNow ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                size={20}
+                color={colors.red600}
+              />
+              <Text style={textStyles.body}>Publish immediately</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.primaryBtn, busy && styles.btnDisabled]}
+              onPress={submit}
+              disabled={busy}
+            >
+              <Text style={styles.primaryBtnText}>{busy ? 'Working…' : 'Create Post'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </RpvCard>
+
+      {busy && posts.length === 0 ? (
+        <Loading label="Loading posts…" />
+      ) : posts.length === 0 ? (
+        <Empty icon="file-document-outline" message="No blog posts yet." />
+      ) : (
+        posts.map((post) => {
+          const badge = BLOG_STATUS_COLORS[post.status] || BLOG_STATUS_COLORS.draft;
+          return (
+            <RpvCard key={post.id}>
+              <View style={styles.bookRow}>
+                <View style={styles.itemBody}>
+                  <Text style={styles.itemTitle}>{post.title}</Text>
+                  <Text style={styles.bookMeta}>
+                    {post.authorName} • {new Date(post.createdAt).toLocaleDateString()}
+                  </Text>
+                </View>
+                <View style={[styles.badge, { backgroundColor: badge.bg }]}>
+                  <Text style={[styles.badgeText, { color: badge.fg }]}>{post.status}</Text>
+                </View>
+                <TouchableOpacity style={styles.deleteBtn} onPress={() => remove(post.id, post.title)}>
+                  <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.red600} />
+                </TouchableOpacity>
+              </View>
+              {post.excerpt ? (
+                <Text style={[textStyles.body, { marginTop: 6 }]} numberOfLines={2}>
+                  {post.excerpt}
+                </Text>
+              ) : null}
+              <View style={styles.bookActions}>
+                {post.status !== 'published' && (
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.publishBtn]}
+                    onPress={() => changeStatus(post.id, 'published')}
+                  >
+                    <Text style={styles.smallBtnText}>Publish</Text>
+                  </TouchableOpacity>
+                )}
+                {post.status === 'published' && (
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.unpublishBtn]}
+                    onPress={() => changeStatus(post.id, 'draft')}
+                  >
+                    <Text style={styles.smallBtnText}>Unpublish</Text>
+                  </TouchableOpacity>
+                )}
+                {post.status !== 'archived' && (
+                  <TouchableOpacity
+                    style={styles.smallBtnOutline}
+                    onPress={() => changeStatus(post.id, 'archived')}
+                  >
+                    <Text style={styles.smallBtnOutlineText}>Archive</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </RpvCard>
+          );
+        })
+      )}
+    </View>
+  );
+}
+
 // ---------- Info-only tabs ----------
 
 function InfoTab({
@@ -614,13 +842,7 @@ export default function AdminScreen(): React.ReactElement {
           />
         )}
         {activeTab === 'highlights' && <HighlightsTab translations={translations} />}
-        {activeTab === 'blog' && (
-          <InfoTab
-            icon="file-document-outline"
-            title="Blog Management"
-            body="Blog articles live in the site's database and are managed on the web admin at rpvbible.com/admin — there is no public mobile API for them yet."
-          />
-        )}
+        {activeTab === 'blog' && <BlogTab />}
         {activeTab === 'banner' && (
           <InfoTab
             icon="bullhorn-outline"

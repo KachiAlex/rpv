@@ -27,6 +27,7 @@ import AuthScreen from '../screens/AuthScreen';
 import AccountScreen from '../screens/AccountScreen';
 import StudyScreen from '../screens/StudyScreen';
 import ProjectorScreen from '../screens/ProjectorScreen';
+import NewsScreen from '../screens/NewsScreen';
 
 export type DrawerParamList = {
   Dashboard: undefined;
@@ -36,7 +37,7 @@ export type DrawerParamList = {
   Search: { query?: string; translationId?: string } | undefined;
   BibleSearch: undefined;
   Study: undefined;
-  News: { hub: string };
+  News: undefined;
   Explore: { hub: string };
   Store: undefined;
   Devotionals: undefined;
@@ -206,8 +207,7 @@ function MainDrawer(): React.ReactElement {
       />
       <Drawer.Screen
         name="News"
-        component={HubScreen}
-        initialParams={{ hub: 'News' }}
+        component={NewsScreen}
         options={{ title: 'Bible News' }}
       />
       <Drawer.Screen
