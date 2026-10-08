@@ -7,6 +7,7 @@ import {
   HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 import type { Translation, Book, Chapter, Verse } from '../types';
+import { sortBooksCanonically } from '../book-order';
 
 function createR2Client() {
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
@@ -163,7 +164,7 @@ export class R2Repository {
       // Return metadata-only (books with empty chapters for quick loading)
       return {
         ...translation,
-        books: translation.books.map(book => ({
+        books: sortBooksCanonically(translation.books).map(book => ({
           name: book.name,
           published: book.published,
           introduction: book.introduction,
@@ -213,10 +214,10 @@ export class R2Repository {
             fullBooks.push(book);
           }
         }
-        return { ...translation, books: fullBooks };
+        return { ...translation, books: sortBooksCanonically(fullBooks) };
       }
 
-      return translation;
+      return { ...translation, books: sortBooksCanonically(translation.books) };
     } catch (error) {
       if (isNotFoundError(error)) return null;
       throw error;
@@ -232,6 +233,9 @@ export class R2Repository {
     const now = new Date();
     const translationWithTimestamps: Translation = {
       ...translation,
+      // Keep the stored manifest in canonical Bible order so newly merged
+      // books slot into position instead of appending after Revelation.
+      books: sortBooksCanonically(translation.books),
       createdAt: translation.createdAt || now,
       updatedAt: now,
     };
