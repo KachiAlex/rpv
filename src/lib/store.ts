@@ -22,6 +22,7 @@ type BibleState = {
   setReference: (ref: Reference) => void;
   setChannelId: (id: string) => void;
   sendToProjector: (ref: Reference) => Promise<void>;
+  blankProjector: () => Promise<void>;
   subscribeToChannel: () => Promise<void>;
   importJson: (data: { translations: Translation[] }) => Promise<void>;
   mergeTranslation: (translation: Translation) => Promise<void>;
@@ -544,16 +545,21 @@ export const useBibleStore = create<BibleState>((set, get) => {
 
     sendToProjector: async (ref) => {
       const { current, channelId } = get();
-      if (!current) return;
+      if (!current) throw new Error('No translation loaded');
 
-      try {
-        // The service publishes locally (BroadcastChannel + localStorage)
-        // before posting to the API, so same-machine projector windows
-        // update instantly and cross-device remotes follow via polling.
-        await projectionService.sendToProjector(channelId || 'default', ref);
-      } catch (error) {
-        console.error('Error sending to projector:', error);
-      }
+      // The service resolves verse text itself (fetching book content when
+      // `current` is metadata-only) and publishes locally before POSTing, so
+      // same-machine projector windows update instantly and cross-device
+      // remotes follow via polling.
+      await projectionService.sendToProjector(channelId || 'default', ref);
+    },
+
+    blankProjector: async () => {
+      const { channelId } = get();
+      await projectionService.blankProjector(channelId || 'default');
+      set({
+        projectorRef: { translation: '', book: '', chapter: 0, verse: 0, text: '', blank: true },
+      });
     },
 
     subscribeToChannel: async () => {

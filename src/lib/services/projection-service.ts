@@ -63,41 +63,87 @@ export class ProjectionService {
   }
 
   async sendToProjector(channelId: string, ref: Reference): Promise<void> {
-    try {
-      const { current } = useBibleStore.getState();
-      if (!current) return;
+    const { current, _translationService } = useBibleStore.getState();
+    if (!current) throw new Error('No translation loaded');
 
-      const book = current.books.find(b => b.name === ref.book);
-      const chapter = book?.chapters.find(c => c.number === ref.chapter);
-      const verse = chapter?.verses.find(v => v.number === ref.verse);
+    let text = ref.text ?? '';
+    if (!text) {
+      const last = ref.endVerse && ref.endVerse > ref.verse ? ref.endVerse : ref.verse;
 
-      const projectorRef: ProjectorRef = {
-        translation: current.name,
-        book: ref.book,
-        chapter: ref.chapter,
-        verse: ref.verse,
-        text: verse?.text || '',
-        timestamp: new Date(),
+      // `current` is usually metadata-only (books with empty chapter stubs),
+      // so prefer the repository — it has its own IndexedDB/offline cache.
+      const lookup = async (): Promise<string> => {
+        const online = await _translationService
+          .getBookContent(current.id, ref.book)
+          .catch(() => null);
+        const source =
+          online ?? current.books.find(b => b.name === ref.book) ?? null;
+        const chapter = source?.chapters?.find(c => c.number === ref.chapter);
+        if (!chapter?.verses?.length) return '';
+        return chapter.verses
+          .filter(v => v.number >= ref.verse && v.number <= last)
+          .sort((a, b) => a.number - b.number)
+          .map(v => v.text)
+          .join(' ');
       };
-
-      // Local transports first — instant for same-machine projector windows.
-      // The API POST then makes it visible to remotes on other devices.
-      this.publishLocal(channelId, projectorRef);
-      await this.postChannel(channelId, projectorRef);
-      await this.cacheManager.saveProjectionChannel(channelId, projectorRef);
-    } catch (error) {
-      console.error('Error sending to projector:', error);
-      throw error;
+      text = await lookup();
+      if (!text) throw new Error(`Verse not found: ${ref.book} ${ref.chapter}:${ref.verse}`);
     }
+
+    const projectorRef: ProjectorRef = {
+      translation: current.name,
+      book: ref.book,
+      chapter: ref.chapter,
+      verse: ref.verse,
+      ...(ref.endVerse && ref.endVerse > ref.verse ? { endVerse: ref.endVerse } : {}),
+      text,
+      timestamp: new Date(),
+    };
+
+    // Local transports first — instant for same-machine projector windows.
+    // The API POST then makes it visible to remotes on other devices.
+    this.publishLocal(channelId, projectorRef);
+    const posted = await this.postChannel(channelId, projectorRef);
+    if (!posted) {
+      console.warn('[Projector] API publish failed — update stayed local');
+    }
+    await this.cacheManager.saveProjectionChannel(channelId, projectorRef);
+  }
+
+  // Blanks the screen until the next verse is sent (BLACK/CLEAR control).
+  async blankProjector(channelId: string): Promise<void> {
+    const projectorRef: ProjectorRef = {
+      translation: '',
+      book: '',
+      chapter: 0,
+      verse: 0,
+      text: '',
+      timestamp: new Date(),
+      blank: true,
+    };
+    this.publishLocal(channelId, projectorRef);
+    const posted = await this.postChannel(channelId, projectorRef);
+    if (!posted) {
+      console.warn('[Projector] API publish failed — blank stayed local');
+    }
+    await this.cacheManager.saveProjectionChannel(channelId, projectorRef);
   }
 
   subscribeToChannel(channelId: string, callback: (ref: ProjectorRef | null) => void): () => void {
     if (typeof window === 'undefined') return () => {};
 
     const apply = (ref: ProjectorRef) => {
-      const stamp = String(ref.timestamp ?? '');
-      if (this.lastSeen.get(channelId) === stamp) return;
-      this.lastSeen.set(channelId, stamp);
+      // Normalize: local broadcasts carry a Date instance, API polls carry an
+      // ISO string — both must dedupe to the same stamp.
+      const stamp = ref.timestamp
+        ? ref.timestamp instanceof Date
+          ? ref.timestamp.toISOString()
+          : String(ref.timestamp)
+        : '';
+      // Only dedupe on a real timestamp — a stamp-less ref must never be
+      // skipped forever just because the previous one also lacked it.
+      if (stamp && this.lastSeen.get(channelId) === stamp) return;
+      if (stamp) this.lastSeen.set(channelId, stamp);
       this.cacheManager.saveProjectionChannel(channelId, ref).catch(() => {});
       callback(ref);
     };
@@ -130,8 +176,11 @@ export class ProjectionService {
       }
     }
 
-    // Cross-device updates: poll the API every 2s
+    // Cross-device updates: poll the API every 2s while the tab is visible,
+    // paused while hidden (a hidden projector window doesn't need updates —
+    // it re-syncs instantly on focus).
     const poll = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       try {
         const res = await fetch(
           getApiUrl(`/api/projector?channel=${encodeURIComponent(channelId)}`),
@@ -144,12 +193,17 @@ export class ProjectionService {
         /* offline — keep polling */
       }
     };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') poll();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     poll();
     const timer = setInterval(poll, 2000);
     this.pollTimers.set(channelId, timer);
 
     return () => {
       window.removeEventListener('storage', handler);
+      document.removeEventListener('visibilitychange', onVisible);
       listener?.close();
       clearInterval(timer);
       this.pollTimers.delete(channelId);

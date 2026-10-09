@@ -9,15 +9,27 @@ export type Translation = {
   updatedAt?: Date;
 };
 
-export type Reference = { book: string; chapter: number; verse: number };
+export type Reference = {
+  book: string;
+  chapter: number;
+  verse: number;
+  /** Optional range end — projects verses `verse` through `endVerse` as one block. */
+  endVerse?: number;
+  /** Explicit text override (e.g. a non-contiguous selection joined together). */
+  text?: string;
+};
 
 export type ProjectorRef = {
   translation: string;
   book: string;
   chapter: number;
   verse: number;
+  /** Range display — projected text covers verses `verse`..`endVerse`. */
+  endVerse?: number;
   text: string;
   timestamp?: Date;
+  /** Blank-screen command — hides all verse content until the next send. */
+  blank?: boolean;
 };
 
 // Verse Highlighting

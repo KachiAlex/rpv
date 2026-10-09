@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback, useTransition } from 'react';
 
 import { useBibleStore } from '@/lib/store';
-import { ChevronLeft, ChevronRight, Keyboard, X, Columns2, SlidersHorizontal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Keyboard, X, Columns2, SlidersHorizontal, Projector } from 'lucide-react';
 import { VerseCard } from '@/components/verse/verse-card';
 import { CopyVersesButton } from '@/components/verse/copy-verses-button';
 import { useAuth } from '@/lib/hooks/use-auth';
@@ -55,7 +55,7 @@ function loadLastScripture(): { book: string; chapter: number; verse: number } {
 }
 
 export default function ReadPageContent() {
-  const { translations, current, loadSample, loadTranslations, setReference, setCurrent, getTranslationsForEndUsers, loadBookContent } = useBibleStore();
+  const { translations, current, loadSample, loadTranslations, setReference, setCurrent, getTranslationsForEndUsers, loadBookContent, sendToProjector } = useBibleStore();
   const { user, isAuthenticated } = useAuth();
   const [initialScripture] = useState(() => loadLastScripture());
   const [book, setBook] = useState<string>(initialScripture.book);
@@ -749,6 +749,32 @@ export default function ReadPageContent() {
                         className="text-sm text-[var(--rpv-ink-faint)] hover:text-[var(--rpv-ink)]"
                       >
                         Clear
+                      </button>
+                      <button
+                        onClick={() => {
+                          const nums = [...selectedVerses].sort((a, b) => a - b);
+                          const contiguous = nums.every((n, i) => i === 0 || n === nums[i - 1] + 1);
+                          const joinedText = nums
+                            .map((n) => displayedVerses.find((v) => v.number === n)?.text || '')
+                            .filter(Boolean)
+                            .join(' ');
+                          sendToProjector({
+                            book,
+                            chapter,
+                            verse: nums[0],
+                            ...(contiguous && nums.length > 1 ? { endVerse: nums[nums.length - 1] } : {}),
+                            text: joinedText,
+                          })
+                            .then(() => setSelectedVerses(new Set()))
+                            .catch((e) =>
+                              alert(e instanceof Error ? e.message : 'Could not project selection')
+                            );
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--rpv-navy)] text-white text-sm font-medium hover:opacity-90"
+                        title="Project selected verses"
+                      >
+                        <Projector size={15} />
+                        Project
                       </button>
                       <CopyVersesButton
                         verses={displayedVerses

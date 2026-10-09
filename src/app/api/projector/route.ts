@@ -58,7 +58,8 @@ export async function POST(request: NextRequest) {
     if (!channel || !ref || typeof ref !== 'object') {
       return NextResponse.json({ error: 'Missing channel or ref' }, { status: 400 });
     }
-    if (!ref.book || typeof ref.chapter !== 'number' || typeof ref.verse !== 'number') {
+    const isBlank = ref.blank === true;
+    if (!isBlank && (!ref.book || typeof ref.chapter !== 'number' || typeof ref.verse !== 'number')) {
       return NextResponse.json({ error: 'Invalid ref payload' }, { status: 400 });
     }
     if (!isR2Configured()) {
@@ -67,11 +68,15 @@ export async function POST(request: NextRequest) {
 
     const payload = {
       translation: ref.translation || '',
-      book: String(ref.book),
-      chapter: ref.chapter,
-      verse: ref.verse,
+      book: String(ref.book ?? ''),
+      chapter: typeof ref.chapter === 'number' ? ref.chapter : 0,
+      verse: typeof ref.verse === 'number' ? ref.verse : 0,
+      ...(typeof ref.endVerse === 'number' && ref.endVerse > (ref.verse ?? 0)
+        ? { endVerse: ref.endVerse }
+        : {}),
       text: ref.text || '',
       timestamp: ref.timestamp || new Date().toISOString(),
+      ...(isBlank ? { blank: true } : {}),
     };
 
     await getR2Client().send(

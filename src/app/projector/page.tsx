@@ -1,12 +1,17 @@
 "use client";
 import { useEffect, useState, useMemo } from 'react';
 import { useBibleStore } from '@/lib/store';
-import { Settings, ZoomIn, ZoomOut, BookOpen, Mic, MicOff, Send, X } from 'lucide-react';
+import { Settings, ZoomIn, ZoomOut, BookOpen, Mic, MicOff, Send, X, MonitorX } from 'lucide-react';
 import { VoiceRecognition, parseBibleReference } from '@/lib/utils/voice-recognition';
 import type { Reference } from '@/lib/types';
 
+const CHANNEL_KEY = 'rpv:projector:channel';
+const sanitizeChannel = (v: string) => v.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+
 export default function ProjectorPage() {
-  const { translations, current, projectorRef, subscribeToChannel, setChannelId, sendToProjector, loadTranslations, loadSample, setCurrent } = useBibleStore();
+  const { translations, current, projectorRef, setChannelId, sendToProjector, blankProjector, loadTranslations, loadSample, setCurrent, loadBookContent } = useBibleStore();
+  // Channel persists across reloads — a projector that's restarted must keep
+  // listening on the same channel the remote is sending to.
   const [channel, setChannel] = useState('default');
   const [fontSize, setFontSize] = useState(48);
   const [showSettings, setShowSettings] = useState(false);
@@ -18,13 +23,27 @@ export default function ProjectorPage() {
   const [isListening, setIsListening] = useState(false);
   const [voiceText, setVoiceText] = useState('');
 
+  // Restore the persisted channel once on mount
+  useEffect(() => {
+    const saved = localStorage.getItem(CHANNEL_KEY);
+    if (saved) setChannel(sanitizeChannel(saved) || 'default');
+  }, []);
+
   useEffect(() => {
     loadTranslations().catch(async () => {
       await loadSample();
     });
-    setChannelId(channel);
-    subscribeToChannel().catch(console.error);
-  }, [channel, setChannelId, subscribeToChannel, loadTranslations, loadSample]);
+  }, [loadTranslations, loadSample]);
+
+  // Debounce: don't tear down + rebuild the subscription on every keystroke.
+  // setChannelId resubscribes internally — no manual subscribeToChannel needed.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setChannelId(channel || 'default');
+      localStorage.setItem(CHANNEL_KEY, channel || 'default');
+    }, 400);
+    return () => clearTimeout(t);
+  }, [channel, setChannelId]);
 
   // Load saved font size
   useEffect(() => {
@@ -35,6 +54,14 @@ export default function ProjectorPage() {
       }
     }
   }, []);
+
+  // The translation list is metadata-only — fetch the selected book's real
+  // chapters/verses so the selector dropdowns and verse text lookup work.
+  useEffect(() => {
+    if (showVerseSelector && current && book) {
+      loadBookContent(current.id, book).catch(() => {});
+    }
+  }, [showVerseSelector, current?.id, book, loadBookContent]);
 
   const saveFontSize = (size: number) => {
     setFontSize(size);
@@ -282,12 +309,13 @@ export default function ProjectorPage() {
             
             <div>
               <label className="block text-sm font-medium mb-2">Channel</label>
-              <input 
-                className="w-full rounded-lg border-2 border-brand-300 dark:border-brand-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm focus:ring-2 focus:ring-accent-purple focus:border-accent-purple" 
-                value={channel} 
-                onChange={(e) => setChannel(e.target.value)}
+              <input
+                className="w-full rounded-lg border-2 border-brand-300 dark:border-brand-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm focus:ring-2 focus:ring-accent-purple focus:border-accent-purple"
+                value={channel}
+                onChange={(e) => setChannel(sanitizeChannel(e.target.value))}
                 placeholder="default"
               />
+              <p className="text-xs text-neutral-500 mt-1">Letters, numbers, - and _ only</p>
             </div>
 
             <div>
@@ -324,6 +352,13 @@ export default function ProjectorPage() {
       {/* Control Buttons */}
       <div className="absolute top-4 right-4 z-20 flex gap-2">
         <button
+          onClick={() => blankProjector().catch(console.error)}
+          className="p-3 rounded-lg bg-white/10 dark:bg-neutral-800/50 backdrop-blur hover:bg-white/20 dark:hover:bg-neutral-700/50 transition-colors text-white"
+          title="Blank screen"
+        >
+          <MonitorX size={24} />
+        </button>
+        <button
           onClick={() => setShowVerseSelector(!showVerseSelector)}
           className="p-3 rounded-lg bg-white/10 dark:bg-neutral-800/50 backdrop-blur hover:bg-white/20 dark:hover:bg-neutral-700/50 transition-colors text-white"
           title="Select Verse"
@@ -353,9 +388,10 @@ export default function ProjectorPage() {
               justifyContent: 'center'
             }}
           >
-            {projectorRef.book ? (
+            {projectorRef.book && !projectorRef.blank ? (
               <span className="bg-gradient-to-r from-accent-teal via-accent-blue to-accent-purple bg-clip-text text-transparent">
                 {projectorRef.translation || 'Bible'} • {projectorRef.book} {projectorRef.chapter}:{projectorRef.verse}
+                {projectorRef.endVerse ? `-${projectorRef.endVerse}` : ''}
               </span>
             ) : (
               <span className="opacity-0">Bible</span>
@@ -363,11 +399,11 @@ export default function ProjectorPage() {
           </div>
 
           {/* Verse Text - Fixed container to prevent layout shifts */}
-          <div 
+          <div
             className="text-center leading-relaxed text-white font-light min-h-[200px] flex items-center justify-center"
             style={{ fontSize: `${fontSize}px` }}
           >
-            {projectorRef.text || (
+            {projectorRef.blank ? null : projectorRef.text || (
               <div className="space-y-4">
                 <div className="animate-pulse opacity-50">
                   Waiting for verse...
