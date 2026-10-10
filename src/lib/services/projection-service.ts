@@ -49,14 +49,41 @@ export class ProjectionService {
     this.broadcast(channelId, ref);
   }
 
-  private async postChannel(channelId: string, ref: ProjectorRef): Promise<boolean> {
+  // Per-channel PIN — the remote/projector pages persist it here so every
+  // write automatically carries it. Reads never need it.
+  private channelPin(channelId: string): string {
+    if (typeof window === 'undefined') return '';
     try {
-      const res = await fetch(getApiUrl('/api/projector'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel: channelId, ref }),
-      });
-      return res.ok;
+      return localStorage.getItem(`rpv:projector:pin:${channelId}`)?.trim() || '';
+    } catch {
+      return '';
+    }
+  }
+
+  // Throws on server rejection (PIN required/incorrect, invalid payload);
+  // TypeError propagates on network failure — callers keep local-only then.
+  private async postChannel(channelId: string, ref: ProjectorRef): Promise<void> {
+    const pin = this.channelPin(channelId);
+    const res = await fetch(getApiUrl('/api/projector'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: channelId, ref, ...(pin ? { pin } : {}) }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.error || `Projector publish failed (${res.status})`);
+    }
+  }
+
+  async isChannelProtected(channelId: string): Promise<boolean> {
+    try {
+      const res = await fetch(
+        getApiUrl(`/api/projector?channel=${encodeURIComponent(channelId)}`),
+        { cache: 'no-store' }
+      );
+      if (!res.ok) return false;
+      const data = await res.json();
+      return Boolean(data?.protected);
     } catch {
       return false;
     }
@@ -103,9 +130,16 @@ export class ProjectionService {
     // Local transports first — instant for same-machine projector windows.
     // The API POST then makes it visible to remotes on other devices.
     this.publishLocal(channelId, projectorRef);
-    const posted = await this.postChannel(channelId, projectorRef);
-    if (!posted) {
-      console.warn('[Projector] API publish failed — update stayed local');
+    try {
+      await this.postChannel(channelId, projectorRef);
+    } catch (error) {
+      // fetch() throws TypeError on network failure — keep local-only then.
+      // A server rejection (e.g. wrong PIN) is a real error the UI must show.
+      if (error instanceof TypeError) {
+        console.warn('[Projector] API unreachable — update stayed local');
+      } else {
+        throw error;
+      }
     }
     await this.cacheManager.saveProjectionChannel(channelId, projectorRef);
   }
@@ -122,9 +156,14 @@ export class ProjectionService {
       blank: true,
     };
     this.publishLocal(channelId, projectorRef);
-    const posted = await this.postChannel(channelId, projectorRef);
-    if (!posted) {
-      console.warn('[Projector] API publish failed — blank stayed local');
+    try {
+      await this.postChannel(channelId, projectorRef);
+    } catch (error) {
+      if (error instanceof TypeError) {
+        console.warn('[Projector] API unreachable — blank stayed local');
+      } else {
+        throw error;
+      }
     }
     await this.cacheManager.saveProjectionChannel(channelId, projectorRef);
   }

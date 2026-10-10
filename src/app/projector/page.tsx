@@ -6,13 +6,16 @@ import { VoiceRecognition, parseBibleReference } from '@/lib/utils/voice-recogni
 import type { Reference } from '@/lib/types';
 
 const CHANNEL_KEY = 'rpv:projector:channel';
+const pinKey = (ch: string) => `rpv:projector:pin:${ch}`;
 const sanitizeChannel = (v: string) => v.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+const sanitizePin = (v: string) => v.replace(/[^0-9a-zA-Z_-]/g, '').slice(0, 64);
 
 export default function ProjectorPage() {
   const { translations, current, projectorRef, setChannelId, sendToProjector, blankProjector, loadTranslations, loadSample, setCurrent, loadBookContent } = useBibleStore();
   // Channel persists across reloads — a projector that's restarted must keep
   // listening on the same channel the remote is sending to.
   const [channel, setChannel] = useState('default');
+  const [pin, setPin] = useState('');
   const [fontSize, setFontSize] = useState(48);
   const [showSettings, setShowSettings] = useState(false);
   const [showVerseSelector, setShowVerseSelector] = useState(false);
@@ -39,11 +42,19 @@ export default function ProjectorPage() {
   // setChannelId resubscribes internally — no manual subscribeToChannel needed.
   useEffect(() => {
     const t = setTimeout(() => {
-      setChannelId(channel || 'default');
-      localStorage.setItem(CHANNEL_KEY, channel || 'default');
+      const ch = channel || 'default';
+      setChannelId(ch);
+      localStorage.setItem(CHANNEL_KEY, ch);
+      setPin(localStorage.getItem(pinKey(ch)) || '');
     }, 400);
     return () => clearTimeout(t);
   }, [channel, setChannelId]);
+
+  const updatePin = (v: string) => {
+    const p = sanitizePin(v);
+    setPin(p);
+    localStorage.setItem(pinKey(channel || 'default'), p);
+  };
 
   // Load saved font size
   useEffect(() => {
@@ -319,6 +330,19 @@ export default function ProjectorPage() {
             </div>
 
             <div>
+              <label className="block text-sm font-medium mb-2">Channel PIN</label>
+              <input
+                type="password"
+                className="w-full rounded-lg border-2 border-brand-300 dark:border-brand-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm focus:ring-2 focus:ring-accent-purple focus:border-accent-purple"
+                value={pin}
+                onChange={(e) => updatePin(e.target.value)}
+                placeholder="Only if channel is protected"
+                autoComplete="off"
+              />
+              <p className="text-xs text-neutral-500 mt-1">Needed for the clear button on protected channels</p>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium mb-2">Font Size: {fontSize}px</label>
               <div className="flex items-center gap-2">
                 <button
@@ -352,7 +376,7 @@ export default function ProjectorPage() {
       {/* Control Buttons */}
       <div className="absolute top-4 right-4 z-20 flex gap-2">
         <button
-          onClick={() => blankProjector().catch(console.error)}
+          onClick={() => blankProjector().catch((e) => alert(e instanceof Error ? e.message : 'Could not blank the screen'))}
           className="p-3 rounded-lg bg-white/10 dark:bg-neutral-800/50 backdrop-blur hover:bg-white/20 dark:hover:bg-neutral-700/50 transition-colors text-white"
           title="Blank screen"
         >

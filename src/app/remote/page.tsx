@@ -1,21 +1,25 @@
 "use client";
 import { useEffect, useState, useCallback } from 'react';
 import { useBibleStore } from '@/lib/store';
-import { Mic, MicOff, Send, BookOpen, ChevronLeft, ChevronRight, MonitorX } from 'lucide-react';
+import { Mic, MicOff, Send, BookOpen, ChevronLeft, ChevronRight, MonitorX, Lock, LockOpen } from 'lucide-react';
 import { VoiceRecognition, parseBibleReference } from '@/lib/utils/voice-recognition';
 import type { Reference } from '@/lib/types';
 
 // Shared with the projector page so both remember the same channel.
 const CHANNEL_KEY = 'rpv:projector:channel';
+const pinKey = (ch: string) => `rpv:projector:pin:${ch}`;
 const sanitizeChannel = (v: string) => v.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+const sanitizePin = (v: string) => v.replace(/[^0-9a-zA-Z_-]/g, '').slice(0, 64);
 
 export default function RemotePage() {
-  const { translations, current, loadSample, loadTranslations, setCurrent, sendToProjector, blankProjector, setChannelId, loadBookContent } = useBibleStore();
+  const { translations, current, loadSample, loadTranslations, setCurrent, sendToProjector, blankProjector, setChannelId, loadBookContent, _projectionService } = useBibleStore();
   const [book, setBook] = useState('John');
   const [chapter, setChapter] = useState(3);
   const [verse, setVerse] = useState(16);
   const [endVerse, setEndVerse] = useState<number | ''>('');
   const [channel, setChannel] = useState('default');
+  const [pin, setPin] = useState('');
+  const [channelProtected, setChannelProtected] = useState(false);
   const [voiceRecognition] = useState(() => new VoiceRecognition());
   const [isListening, setIsListening] = useState(false);
   const [voiceText, setVoiceText] = useState('');
@@ -39,13 +43,23 @@ export default function RemotePage() {
   }, [loadTranslations, loadSample]);
 
   // Debounce channel changes — setChannelId resubscribes the listener.
+  // Also load that channel's PIN and check whether it has been claimed.
   useEffect(() => {
     const t = setTimeout(() => {
-      setChannelId(channel || 'default');
-      localStorage.setItem(CHANNEL_KEY, channel || 'default');
+      const ch = channel || 'default';
+      setChannelId(ch);
+      localStorage.setItem(CHANNEL_KEY, ch);
+      setPin(localStorage.getItem(pinKey(ch)) || '');
+      _projectionService.isChannelProtected(ch).then(setChannelProtected);
     }, 400);
     return () => clearTimeout(t);
-  }, [channel, setChannelId]);
+  }, [channel, setChannelId, _projectionService]);
+
+  const updatePin = (v: string) => {
+    const p = sanitizePin(v);
+    setPin(p);
+    localStorage.setItem(pinKey(channel || 'default'), p);
+  };
 
   // The translation list is metadata-only — fetch the selected book's real
   // chapters/verses so the dropdowns and send-text lookup work.
@@ -59,6 +73,7 @@ export default function RemotePage() {
     setSendError('');
     try {
       await sendToProjector(ref);
+      _projectionService.isChannelProtected(channel || 'default').then(setChannelProtected);
 
       const updated = [ref, ...recentVerses.filter(r =>
         !(r.book === ref.book && r.chapter === ref.chapter && r.verse === ref.verse && r.endVerse === ref.endVerse)
@@ -73,7 +88,7 @@ export default function RemotePage() {
     } catch (error) {
       setSendError(error instanceof Error ? error.message : 'Failed to send — check connection and that the verse exists.');
     }
-  }, [sendToProjector, recentVerses]);
+  }, [sendToProjector, recentVerses, channel, _projectionService]);
 
   const handleVoiceResult = useCallback((text: string) => {
     console.log('[Remote] Voice result received:', text);
@@ -171,15 +186,41 @@ export default function RemotePage() {
       </div>
 
       {/* Channel Selection */}
-      <div className="rounded-xl border-2 border-brand-200 dark:border-brand-800 bg-gradient-to-br from-brand-50 to-white dark:from-neutral-800 dark:to-neutral-800 p-4">
-        <label className="block text-sm font-medium mb-2">Channel</label>
-        <input
-          className="w-full rounded-lg border-2 border-brand-300 dark:border-brand-700 bg-white dark:bg-neutral-800 px-4 py-2 focus:ring-2 focus:ring-accent-purple focus:border-accent-purple"
-          value={channel}
-          onChange={(e) => setChannel(sanitizeChannel(e.target.value))}
-          placeholder="default"
-        />
-        <p className="text-xs text-neutral-500 mt-1">Match this channel on the projector screen — letters, numbers, - and _ only</p>
+      <div className="rounded-xl border-2 border-brand-200 dark:border-brand-800 bg-gradient-to-br from-brand-50 to-white dark:from-neutral-800 dark:to-neutral-800 p-4 space-y-3">
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            Channel{' '}
+            <span
+              className={`inline-flex items-center gap-1 text-xs font-normal ${
+                channelProtected ? 'text-amber-600' : 'text-neutral-400'
+              }`}
+              title={channelProtected ? 'This channel is PIN-protected' : 'This channel is open to anyone'}
+            >
+              {channelProtected ? <Lock size={11} /> : <LockOpen size={11} />}
+              {channelProtected ? 'protected' : 'open'}
+            </span>
+          </label>
+          <input
+            className="w-full rounded-lg border-2 border-brand-300 dark:border-brand-700 bg-white dark:bg-neutral-800 px-4 py-2 focus:ring-2 focus:ring-accent-purple focus:border-accent-purple"
+            value={channel}
+            onChange={(e) => setChannel(sanitizeChannel(e.target.value))}
+            placeholder="default"
+          />
+          <p className="text-xs text-neutral-500 mt-1">Match this channel on the projector screen — letters, numbers, - and _ only</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            Channel PIN {channelProtected ? <span className="text-amber-600 text-xs font-normal">(required)</span> : <span className="text-neutral-400 text-xs font-normal">(optional — first send with a PIN protects this channel)</span>}
+          </label>
+          <input
+            type="password"
+            className="w-full rounded-lg border-2 border-brand-300 dark:border-brand-700 bg-white dark:bg-neutral-800 px-4 py-2 focus:ring-2 focus:ring-accent-purple focus:border-accent-purple"
+            value={pin}
+            onChange={(e) => updatePin(e.target.value)}
+            placeholder="4+ characters"
+            autoComplete="off"
+          />
+        </div>
       </div>
 
       {/* Translation Selection */}
