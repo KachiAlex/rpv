@@ -89,6 +89,7 @@
   "build": {
     "appId": "com.rpv.bible",
     "productName": "RPV Bible",
+    "npmRebuild": false,
     "files": [
       "electron/**/*",
       "desktop-resources/icon.png",

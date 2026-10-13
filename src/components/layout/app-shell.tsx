@@ -17,6 +17,7 @@ const EXPLORE_ITEMS = [
   { name: 'Bible News', href: '/news', icon: 'news', disabled: false },
   { name: 'Explore More', href: '/explore', icon: 'explore', disabled: false },
   { name: 'Store', href: '/store', icon: 'store', disabled: false },
+  { name: 'Download App', href: '/download', icon: 'download', disabled: false },
 ];
 
 function NavIcon({ name }: { name: string }) {
@@ -41,6 +42,9 @@ function NavIcon({ name }: { name: string }) {
     ),
     store: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 8V6a6 6 0 0 1 12 0v2M4 8h16l-1 13H5Z"/></svg>
+    ),
+    download: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
     ),
   };
   return icons[name] || null;

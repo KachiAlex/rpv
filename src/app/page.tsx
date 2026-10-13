@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FeaturedBlogArticles } from '@/components/home/featured-blog-articles';
 import { SimplePublicationBanner } from '@/components/announcements/simple-publication-banner';
-import { Search, BookOpen, Sparkles, Calendar, ChevronRight } from 'lucide-react';
+import { Search, BookOpen, Sparkles, Calendar, ChevronRight, Monitor, Smartphone } from 'lucide-react';
 import { useState, useEffect, useMemo, useCallback, useTransition } from 'react';
 import { useBibleStore } from '@/lib/store';
 import { formatTranslationName, sortTranslations, getDefaultTranslationId } from '@/lib/utils/translation-formatter';
@@ -179,6 +179,32 @@ export default function HomePage() {
             <p>{feature.body}</p>
           </div>
         ))}
+      </div>
+
+      {/* Get the Apps */}
+      <div className="rpv-card" style={{ marginBottom: 20 }}>
+        <div className="rpv-section-head">
+          <h2>Get the Apps</h2>
+          <p>RPV Bible on your desktop and phone — free, and works offline.</p>
+        </div>
+        <div className="rpv-grid2">
+          <Link href="/download" className="rpv-btn-outline-navy">
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Monitor size={15} /> Desktop for Windows
+              </span>
+              <ChevronRight size={14} />
+            </span>
+          </Link>
+          <Link href="/download" className="rpv-btn-outline-navy">
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Smartphone size={15} /> Android App
+              </span>
+              <ChevronRight size={14} />
+            </span>
+          </Link>
+        </div>
       </div>
 
       {/* Featured Articles */}
