@@ -9,6 +9,7 @@ interface TranslationGroupProps {
   translation: Translation;
   onToggleBookPublication: (translationId: string, bookName: string) => Promise<boolean>;
   onBulkUpdate?: (translationId: string, updates: Array<{ bookName: string; published: boolean }>) => Promise<void>;
+  onDeleteBook?: (translationId: string, bookName: string) => Promise<void>;
   className?: string;
 }
 
@@ -16,6 +17,7 @@ export function TranslationGroup({
   translation, 
   onToggleBookPublication,
   onBulkUpdate,
+  onDeleteBook,
   className = '' 
 }: TranslationGroupProps) {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -197,6 +199,7 @@ export function TranslationGroup({
                   book={book}
                   translationId={translation.id}
                   onTogglePublication={handleToggleBook}
+                  onDeleteBook={onDeleteBook ? (name) => onDeleteBook(translation.id, name) : undefined}
                 />
               ))}
             </div>

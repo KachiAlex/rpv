@@ -235,7 +235,11 @@ export class R2Repository {
       ...translation,
       // Keep the stored manifest in canonical Bible order so newly merged
       // books slot into position instead of appending after Revelation.
-      books: sortBooksCanonically(translation.books),
+      // Normalize stray whitespace in book names (e.g. an uploaded "Mark ")
+      // so manifest entries and book-file keys stay clean.
+      books: sortBooksCanonically(
+        translation.books.map((b) => ({ ...b, name: b.name?.trim() }))
+      ),
       createdAt: translation.createdAt || now,
       updatedAt: now,
     };
@@ -287,9 +291,11 @@ export class R2Repository {
       return newTranslation;
     }
 
-    // Merge books
+    // Merge books. Names are trimmed — an upload of "Mark " must merge into
+    // "Mark", not append a whitespace-variant duplicate.
     for (const newBook of newTranslation.books) {
-      const existingIndex = existing.books.findIndex(b => b.name === newBook.name);
+      newBook.name = newBook.name?.trim();
+      const existingIndex = existing.books.findIndex(b => b.name?.trim() === newBook.name);
       if (existingIndex === -1) {
         existing.books.push(newBook);
         continue;

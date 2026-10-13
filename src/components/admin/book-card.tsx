@@ -1,14 +1,16 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { BookPublicationStatusBadge } from './book-publication-status-badge';
 import { BookPublishToggleButton } from './book-publish-toggle-button';
+import { Trash2 } from 'lucide-react';
 import type { Book } from '../../lib/types';
 
 interface BookCardProps {
   book: Book;
   translationId: string;
   onTogglePublication: (bookName: string) => Promise<boolean>;
+  onDeleteBook?: (bookName: string) => Promise<void>;
   className?: string;
 }
 
@@ -16,14 +18,26 @@ export function BookCard({
   book, 
   translationId, 
   onTogglePublication,
+  onDeleteBook,
   className = '' 
 }: BookCardProps) {
   const chapterCount = book.chapters?.length || 0;
   const verseCount = book.chapters?.reduce((sum, chapter) => sum + (chapter.verses?.length || 0), 0) || 0;
   const published = book.published !== false; // Default to true if undefined
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleToggle = async () => {
     return await onTogglePublication(book.name);
+  };
+
+  const handleDelete = async () => {
+    if (!onDeleteBook || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteBook(book.name);
+    } catch {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -65,11 +79,23 @@ export function BookCard({
           Translation: {translationId}
         </div>
         
-        <BookPublishToggleButton
-          published={published}
-          onToggle={handleToggle}
-          size="sm"
-        />
+        <div className="flex items-center space-x-2">
+          <BookPublishToggleButton
+            published={published}
+            onToggle={handleToggle}
+            size="sm"
+          />
+          {onDeleteBook && (
+            <button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="p-1.5 rounded text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-50"
+              title={`Delete ${book.name}`}
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

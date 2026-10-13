@@ -14,7 +14,8 @@ export function BookManagementSection({ className = '' }: BookManagementSectionP
     translations, 
     isLoading, 
     toggleBookPublicationStatus, 
-    bulkUpdateBookPublicationStatus 
+    bulkUpdateBookPublicationStatus,
+    deleteBook
   } = useBibleStore();
   
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +50,20 @@ export function BookManagementSection({ className = '' }: BookManagementSectionP
       return newStatus;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to update book publication status';
+      setError(errorMessage);
+      throw error;
+    }
+  };
+
+  const handleDeleteBook = async (translationId: string, bookName: string): Promise<void> => {
+    if (!window.confirm(`Permanently delete "${bookName}" from ${translationId}? This removes the book file from storage and cannot be undone.`)) {
+      return;
+    }
+    try {
+      setError(null);
+      await deleteBook(translationId, bookName);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete book';
       setError(errorMessage);
       throw error;
     }
@@ -196,6 +211,7 @@ export function BookManagementSection({ className = '' }: BookManagementSectionP
                 translation={translation}
                 onToggleBookPublication={handleToggleBookPublication}
                 onBulkUpdate={handleBulkUpdate}
+                onDeleteBook={handleDeleteBook}
               />
             ))
           )}
